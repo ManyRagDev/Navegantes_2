@@ -1,0 +1,5 @@
+{
+  "name": "Navegantes - Diário de Bordo",
+  "description": "Um guia de viagem vintage com mapas personalizados, roteiros inteligentes e um assistente IA nostálgico.",
+  "requestFramePermissions": ["geolocation"]
+}

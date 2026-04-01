@@ -1,0 +1,97 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int          @id @default(autoincrement())
+  email       String       @unique
+  name        String
+  bio         String?
+  avatar      String?
+  isPremium   Boolean      @default(false)
+  credits     Int          @default(0)
+  activeTripUntil DateTime?
+  posts       Post[]
+  itineraries Itinerary[]
+  seals       Seal[]
+  favorites   Favorite[]
+  comments    Comment[]
+  createdAt   DateTime     @default(now())
+}
+
+model Post {
+  id        Int       @id @default(autoincrement())
+  user      User      @relation(fields: [userId], references: [id])
+  userId    Int
+  local     String
+  texto     String
+  img       String
+  likes     Int       @default(0)
+  comments  Comment[]
+  createdAt DateTime  @default(now())
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  text      String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    Int
+  createdAt DateTime @default(now())
+}
+
+model Itinerary {
+  id          Int      @id @default(autoincrement())
+  name        String
+  destination String
+  theme       String?
+  isCustom    Boolean  @default(false)
+  user        User     @relation(fields: [userId], references: [id])
+  userId      Int
+  days        Day[]
+  createdAt   DateTime @default(now())
+}
+
+model Day {
+  id          Int       @id @default(autoincrement())
+  dayNumber   Int
+  itinerary   Itinerary @relation(fields: [itineraryId], references: [id])
+  itineraryId Int
+  stops       Stop[]
+}
+
+model Stop {
+  id          Int     @id @default(autoincrement())
+  time        String
+  title       String
+  description String?
+  day         Day     @relation(fields: [dayId], references: [id])
+  dayId       Int
+}
+
+model Seal {
+  id        Int      @id @default(autoincrement())
+  name      String
+  icon      String
+  color     String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime @default(now())
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  localId   Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime @default(now())
+}
