@@ -13,12 +13,39 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
+// --- GEMINI AI PROXY (SEGURANÇA) ---
+// Todas as chamadas ao Gemini passam pelo backend, protegendo a API Key
+app.post("/api/gemini", async (req, res) => {
+  const { model, contents, config } = req.body;
+  
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "GEMINI_API_KEY não configurada no servidor" });
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3-flash-preview'}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents, ...config })
+      }
+    );
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error("Erro no proxy Gemini:", error);
+    res.status(500).json({ error: "Erro ao comunicar com o Gemini" });
+  }
+});
+
 // --- API ROUTES ---
 
 // User Profile
 app.get("/api/profile", async (req, res) => {
   try {
-    // For now, we'll use a default user (id: 1)
     let user = await prisma.user.findUnique({
       where: { id: 1 },
       include: {
@@ -35,7 +62,6 @@ app.get("/api/profile", async (req, res) => {
     });
 
     if (!user) {
-      // Create a default user if none exists
       user = await prisma.user.create({
         data: {
           id: 1,
@@ -43,7 +69,7 @@ app.get("/api/profile", async (req, res) => {
           name: "Capitão Navegante",
           bio: "Explorando os sete mares e as ruas de paralelepípedo.",
           avatar: "https://i.pravatar.cc/150?u=navegante",
-          credits: 1 // Give 1 free credit to start
+          credits: 1
         },
         include: {
           seals: true,
@@ -66,7 +92,7 @@ app.get("/api/profile", async (req, res) => {
 
 // Mock route to upgrade to Pro or Add Credits
 app.post("/api/upgrade", async (req, res) => {
-  const { type, days } = req.body; // 'trip' or 'lifetime'
+  const { type, days } = req.body;
   try {
     let data = {};
     if (type === 'trip') {

@@ -2,12 +2,14 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["navegantes"]
 }
 
 model User {
@@ -25,6 +27,9 @@ model User {
   favorites   Favorite[]
   comments    Comment[]
   createdAt   DateTime     @default(now())
+
+  @@map("users")
+  @@schema("navegantes")
 }
 
 model Post {
@@ -37,6 +42,10 @@ model Post {
   likes     Int       @default(0)
   comments  Comment[]
   createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("posts")
+  @@schema("navegantes")
 }
 
 model Comment {
@@ -47,6 +56,11 @@ model Comment {
   post      Post     @relation(fields: [postId], references: [id])
   postId    Int
   createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([postId])
+  @@map("comments")
+  @@schema("navegantes")
 }
 
 model Itinerary {
@@ -59,6 +73,10 @@ model Itinerary {
   userId      Int
   days        Day[]
   createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("itineraries")
+  @@schema("navegantes")
 }
 
 model Day {
@@ -67,6 +85,10 @@ model Day {
   itinerary   Itinerary @relation(fields: [itineraryId], references: [id])
   itineraryId Int
   stops       Stop[]
+
+  @@unique([itineraryId, dayNumber])
+  @@map("days")
+  @@schema("navegantes")
 }
 
 model Stop {
@@ -76,6 +98,10 @@ model Stop {
   description String?
   day         Day     @relation(fields: [dayId], references: [id])
   dayId       Int
+
+  @@index([dayId])
+  @@map("stops")
+  @@schema("navegantes")
 }
 
 model Seal {
@@ -86,6 +112,10 @@ model Seal {
   user      User     @relation(fields: [userId], references: [id])
   userId    Int
   createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("seals")
+  @@schema("navegantes")
 }
 
 model Favorite {
@@ -94,4 +124,9 @@ model Favorite {
   user      User     @relation(fields: [userId], references: [id])
   userId    Int
   createdAt DateTime @default(now())
+
+  @@unique([userId, localId])
+  @@index([userId])
+  @@map("favorites")
+  @@schema("navegantes")
 }

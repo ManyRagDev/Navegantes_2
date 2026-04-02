@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Compass, Map as MapIcon, Search, Navigation, Clock, Star, Heart, Bookmark, Camera, MapPin, ChevronLeft, Send, MessageSquare, Sun, Edit3, Download, Plus, Award, X, Sparkles, Users, UserCircle, ThumbsUp, Share2, Save, MapPinned, ArrowRight, CheckCircle2, Mail, AlertTriangle, RefreshCw, Anchor, WifiOff, ShoppingBag, Lock } from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer } from '@react-google-maps/api';
 import { motion, AnimatePresence } from 'motion/react';
+import { apiUrl } from './api';
 
 // --- TIPOS ---
 
@@ -191,6 +191,18 @@ const formatMessage = (text: string) => {
 
 // --- CONSTANTES E ESTILOS ---
 
+// Função auxiliar para chamar o proxy do Gemini (protege a API Key)
+const callGeminiProxy = async (model: string, contents: any, config?: any) => {
+  const response = await fetch(apiUrl("/api/gemini"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, contents, config })
+  });
+  const data = await response.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+};
+
 const MAP_STYLES = [
   {
     "elementType": "geometry",
@@ -351,7 +363,7 @@ export default function App() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const profileRes = await fetch("/api/profile");
+        const profileRes = await fetch(apiUrl("/api/profile"));
         const profile = await profileRes.json();
         
         if (profile && !profile.error) {
@@ -364,7 +376,7 @@ export default function App() {
           });
         }
 
-        const postsRes = await fetch("/api/posts");
+        const postsRes = await fetch(apiUrl("/api/posts"));
         const postsData = await postsRes.json();
         if (Array.isArray(postsData)) {
           setPosts(postsData);
@@ -390,7 +402,7 @@ export default function App() {
     const hasStamp = profileData.seals.some(s => s.name === name);
     if (!hasStamp) {
       try {
-        const res = await fetch("/api/seals", {
+        const res = await fetch(apiUrl("/api/seals"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, icon, color })
@@ -411,7 +423,7 @@ export default function App() {
     const isLiked = likedPosts.includes(postId);
     if (!isLiked) {
       try {
-        await fetch(`/api/posts/${postId}/like`, { method: "POST" });
+        await fetch(apiUrl(`/api/posts/${postId}/like`), { method: "POST" });
         setLikedPosts(prev => [...prev, postId]);
         setPosts(prevPosts => prevPosts.map(post => 
           post.id === postId ? { ...post, likes: post.likes + 1 } : post
@@ -587,13 +599,13 @@ export default function App() {
     const isFav = profileData.favorites.includes(localId);
     try {
       if (isFav) {
-        await fetch(`/api/favorites/${localId}`, { method: "DELETE" });
+        await fetch(apiUrl(`/api/favorites/${localId}`), { method: "DELETE" });
         setProfileData(prev => ({
           ...prev,
           favorites: prev.favorites.filter(id => id !== localId)
         }));
       } else {
-        await fetch("/api/favorites", {
+        await fetch(apiUrl("/api/favorites"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ localId })
@@ -640,26 +652,8 @@ export default function App() {
 
     setIsSearchingCity(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Sugira 5 pontos turísticos imperdíveis em ${newItineraryDest}. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Breve descrição", "time": "09:00"}, ...]`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.NUMBER },
-                title: { type: Type.STRING },
-                description: { type: Type.STRING },
-                time: { type: Type.STRING }
-              },
-              required: ["id", "title", "description", "time"]
-            }
-          }
-        }
+      const response = await callGeminiProxy("gemini-3-flash-preview", `Sugira 5 pontos turísticos imperdíveis em ${newItineraryDest}. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Breve descrição", "time": "09:00"}, ...]`, {
+        responseMimeType: "application/json"
       });
       
       const suggestions = JSON.parse(response.text || '[]');
@@ -677,26 +671,8 @@ export default function App() {
     setIsIaLoading(true);
     setShowIAAssistant(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Estou em ${dados.roteiro.cidade}. Baseado no clima de ${dados.roteiro.clima}, sugira 3 atividades rápidas ou locais próximos para visitar agora. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Por que ir agora", "icon": "emoji"}]`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.NUMBER },
-                title: { type: Type.STRING },
-                description: { type: Type.STRING },
-                icon: { type: Type.STRING }
-              },
-              required: ["id", "title", "description", "icon"]
-            }
-          }
-        }
+      const response = await callGeminiProxy("gemini-3-flash-preview", `Estou em ${dados.roteiro.cidade}. Baseado no clima de ${dados.roteiro.clima}, sugira 3 atividades rápidas ou locais próximos para visitar agora. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Por que ir agora", "icon": "emoji"}]`, {
+        responseMimeType: "application/json"
       });
       
       const suggestions = JSON.parse(response.text || '[]');
@@ -712,28 +688,8 @@ export default function App() {
   const fetchDashboardSuggestions = async (city: string) => {
     setIsDashboardIaLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Estou em ${city}. Sugira os 10 melhores locais para visitar agora (restaurantes, parques ou pontos turísticos). Retorne apenas um JSON no formato: [{"id": "ia1", "title": "Nome", "description": "Por que ir", "icon": "emoji", "rating": 4.9, "img": "https://images.unsplash.com/..."}]`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                title: { type: Type.STRING },
-                description: { type: Type.STRING },
-                icon: { type: Type.STRING },
-                rating: { type: Type.NUMBER },
-                img: { type: Type.STRING }
-              },
-              required: ["id", "title", "description", "icon", "rating", "img"]
-            }
-          }
-        }
+      const response = await callGeminiProxy("gemini-3-flash-preview", `Estou em ${city}. Sugira os 10 melhores locais para visitar agora (restaurantes, parques ou pontos turísticos). Retorne apenas um JSON no formato: [{"id": "ia1", "title": "Nome", "description": "Por que ir", "icon": "emoji", "rating": 4.9, "img": "https://images.unsplash.com/..."}]`, {
+        responseMimeType: "application/json"
       });
       
       const suggestions = JSON.parse(response.text || '[]');
@@ -920,12 +876,8 @@ export default function App() {
         const { latitude, longitude } = position.coords;
         setUserCoords({ lat: latitude, lng: longitude });
         try {
-          const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "" });
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: `O usuário está nas coordenadas Latitude: ${latitude}, Longitude: ${longitude}. Identifique a cidade e o estado/país aproximado. Responda APENAS o nome da cidade e estado/país, ex: "São Paulo, Brasil".`,
-          });
-          const locationText = response.text?.trim() || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+          const response = await callGeminiProxy("gemini-3-flash-preview", `O usuário está nas coordenadas Latitude: ${latitude}, Longitude: ${longitude}. Identifique a cidade e o estado/país aproximado. Responda APENAS o nome da cidade e estado/país, ex: "São Paulo, Brasil".`);
+          const locationText = (response.text || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`).trim();
           setUserCity(locationText);
         } catch (error) {
           console.error("Erro ao identificar cidade:", error);
@@ -957,17 +909,8 @@ export default function App() {
             const { latitude, longitude } = position.coords;
             
             try {
-              const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "" });
-              const response = await ai.models.generateContent({
-                model: "gemini-3-flash-preview",
-                contents: `O usuário abriu o guia. Ele está em ${userCity || 'coordenadas Latitude: ' + latitude + ', Longitude: ' + longitude}. 
-                Dê as boas-vindas como "O Capitão", mencione que você o localizou pelo GPS e comente algo breve e nostálgico sobre estar nessa região ou sobre a jornada de explorador. 
-                Seja breve (máximo 2 parágrafos).`,
-                config: {
-                  systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". 
-                  Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. 
-                  Mantenha as respostas curtas. Use emojis retrô como 🧭, ⚓, 📜, 🗺️.`,
-                }
+              const response = await callGeminiProxy("gemini-3-flash-preview", `O usuário abriu o guia. Ele está em ${userCity || 'coordenadas Latitude: ' + latitude + ', Longitude: ' + longitude}. Dê as boas-vindas como "O Capitão", mencione que você o localizou pelo GPS e comente algo breve e nostálgico sobre estar nessa região ou sobre a jornada de explorador. Seja breve (máximo 2 parágrafos).`, {
+                systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. Mantenha as respostas curtas. Use emojis retrô como 🧭, ⚓, 📜, 🗺️.`
               });
 
               const botText = response.text || `Ahoy! Vejo que você está em ${userCity || 'coordenadas interessantes'}. Pronto para a aventura?`;
@@ -1020,18 +963,8 @@ export default function App() {
         setProfileData(prev => ({ ...prev, credits: Math.max(0, prev.credits - 1) }));
       }
 
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "" });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: userText,
-        config: {
-          systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". 
-          Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. 
-          Você está ajudando o usuário a explorar ${modoAtivo === 'brasil' ? 'o Brasil' : 'o Mundo'}.
-          Mantenha as respostas curtas (máximo 3 parágrafos). 
-          Use emojis retrô como 🧭, ⚓, 📜, 🗺️.
-          Se o usuário perguntar sobre um lugar específico, dê uma dica "escondida" ou pouco conhecida.`,
-        }
+      const response = await callGeminiProxy("gemini-3-flash-preview", userText, {
+        systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. Você está ajudando o usuário a explorar ${modoAtivo === 'brasil' ? 'o Brasil' : 'o Mundo'}. Mantenha as respostas curtas (máximo 3 parágrafos). Use emojis retrô como 🧭, ⚓, 📜, 🗺️. Se o usuário perguntar sobre um lugar específico, dê uma dica "escondida" ou pouco conhecida.`
       });
 
       const botText = response.text || "Desculpe, meu rádio está com interferência. Pode repetir?";
@@ -1069,7 +1002,7 @@ export default function App() {
     if (!memoryImage || !memoryText.trim()) return;
     
     try {
-      const res = await fetch("/api/posts", {
+      const res = await fetch(apiUrl("/api/posts"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ local: memoryLocation, texto: memoryText, img: memoryImage })
@@ -1146,7 +1079,7 @@ export default function App() {
 
   const handleUpgrade = async (type: 'trip' | 'lifetime', days?: number) => {
     try {
-      const res = await fetch("/api/upgrade", {
+      const res = await fetch(apiUrl("/api/upgrade"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, days })
@@ -1166,7 +1099,7 @@ export default function App() {
 
   const saveProfile = async () => {
     try {
-      const res = await fetch("/api/profile", {
+      const res = await fetch(apiUrl("/api/profile"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editName, bio: editBio })
