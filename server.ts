@@ -1,7 +1,6 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -237,14 +236,13 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
+    const distPath = path.join(process.cwd(), "dist");
     
-    app.use(express.static(path.join(__dirname, "dist")));
+    app.use(express.static(distPath));
     
     // Fallback para React Router / SPA
     app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
