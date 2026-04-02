@@ -942,11 +942,12 @@ export default function App() {
     if (!inputValue.trim()) return;
     
     // Check for credits/premium
-    if (!profileData.isPremium && profileData.credits <= 0) {
-      showToast("Você precisa de um Bilhete de Viagem para falar com o Capitão! 🎫", "error");
-      changeTab('perfil');
-      return;
-    }
+    // BYPASS IA TEMPORÁRIA
+    // if (!profileData.isPremium && profileData.credits <= 0) {
+    //   showToast("Você precisa de um Bilhete de Viagem para falar com o Capitão! 🎫", "error");
+    //   changeTab('perfil');
+    //   return;
+    // }
 
     const userText = inputValue;
     const newUserMsg = { id: Date.now(), type: 'user', text: userText, time: 'Agora' };
@@ -959,9 +960,10 @@ export default function App() {
 
     try {
       // Consume credit if not premium
-      if (!profileData.isPremium) {
-        setProfileData(prev => ({ ...prev, credits: Math.max(0, prev.credits - 1) }));
-      }
+      // BYPASS IA TEMPORÁRIA
+      // if (!profileData.isPremium) {
+      //   setProfileData(prev => ({ ...prev, credits: Math.max(0, prev.credits - 1) }));
+      // }
 
       const response = await callGeminiProxy("gemini-3-flash-preview", userText, {
         systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. Você está ajudando o usuário a explorar ${modoAtivo === 'brasil' ? 'o Brasil' : 'o Mundo'}. Mantenha as respostas curtas (máximo 3 parágrafos). Use emojis retrô como 🧭, ⚓, 📜, 🗺️. Se o usuário perguntar sobre um lugar específico, dê uma dica "escondida" ou pouco conhecida.`
@@ -1951,7 +1953,8 @@ export default function App() {
   );
 
   const renderIA = () => {
-    const isLocked = !profileData.isPremium && !isTripActive;
+    // BYPASS IA TEMPORÁRIA
+    const isLocked = false; // !profileData.isPremium && !isTripActive;
 
     return (
       <div className="flex flex-col h-full animate-fade-in relative">
@@ -2306,11 +2309,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-800 flex items-center justify-center p-2 sm:p-4 font-retro-body text-[#4a3320]">
-      <div className="w-full max-w-[360px] h-[740px] max-h-[95vh] bg-[#f3ecdb] rounded-[2.5rem] border-6 border-neutral-300 shadow-2xl relative overflow-hidden flex flex-col ring-4 ring-neutral-900">
-        
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-5 bg-neutral-300 rounded-b-xl z-50"></div>
-
+    <div className="w-full min-h-[100dvh] bg-[#f3ecdb] font-retro-body text-[#4a3320] relative flex flex-col overflow-hidden">
         <header className="pt-10 pb-3 px-4 relative border-b-4 border-[#5a3c28] shadow-md z-40 flex-shrink-0 transition-colors duration-500 ease-in-out" style={{ backgroundColor: modoAtivo === 'brasil' ? '#2c5e40' : '#b45a35', color: '#f3ecdb' }}>
           <ModoSwitch modoAtual={modoAtivo} toggleModo={toggleModo} />
           <div className="flex items-center gap-2.5 mt-2">
@@ -2460,12 +2459,13 @@ export default function App() {
               <div className="p-4 overflow-y-auto space-y-5">
                 <button 
                   onClick={() => {
-                    if (!profileData.isPremium && !isTripActive && profileData.credits <= 0) {
-                      showToast("Você precisa de um Bilhete de Viagem para criar novos roteiros! 🎫", "error");
-                      setShowItineraries(false);
-                      changeTab('perfil');
-                      return;
-                    }
+                    // BYPASS IA TEMPORÁRIA
+                    // if (!profileData.isPremium && !isTripActive && profileData.credits <= 0) {
+                    //   showToast("Você precisa de um Bilhete de Viagem para criar novos roteiros! 🎫", "error");
+                    //   setShowItineraries(false);
+                    //   changeTab('perfil');
+                    //   return;
+                    // }
                     setShowCreateItinerary(true);
                   }} 
                   className="w-full bg-[#64a4ad] text-white font-retro-body font-bold py-2 rounded-lg border-2 border-[#5a3c28] shadow-[2px_2px_0px_#5a3c28] flex items-center justify-center gap-2"
@@ -2954,7 +2954,6 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
     </div>
   );
 }
