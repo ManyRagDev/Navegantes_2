@@ -15,7 +15,7 @@ Antes de qualquer alteração relevante, você DEVE ler:
 - **Responsabilidade**: Entenda o domínio do trecho antes de editar (Social, Mapas, Roteiros, IA).
 - **Impactos**: Mapeie efeitos colaterais em toda a stack (Prisma -> Server -> App.tsx).
 - **Preservação**: Mantenha o comportamento existente, a menos que solicitado explicitamente.
-- **Transparência**: Destaque riscos, acoplamentos frágeis (especialmente em `App.tsx`) e inconsistências.
+- **Transparência**: Destaque riscos, acoplamentos frágeis e inconsistências.
 
 ## 4. Prioridades Técnicas
 - **Schema `navegantes`**: Use exclusivamente este schema no Postgres.
@@ -27,15 +27,20 @@ Antes de qualquer alteração relevante, você DEVE ler:
 Atualize o `DOCUMENTO_MESTRE.md` se:
 - Criar ou alterar modelos no Prisma.
 - Adicionar ou modificar rotas no `server.ts`.
-- Criar novos módulos funcionais no `App.tsx`.
+- Criar novos módulos funcionais.
 - Alterar integrações externas (Gemini, Google Maps).
 
 ## 6. Restrições e Cuidados
-- **Não assuma**: Cruze informações entre os documentos listados acima.
-- **Monolito UI**: `App.tsx` possui alto acoplamento; alterações pequenas podem ter efeitos grandes na interface.
-- **Mock status**: Considere que o projeto ainda usa `userId: 1` fixo e mocks parciais.
+- **Monolito UI**: `App.tsx` possui alto acoplamento e >2500 linhas. **NÃO ADICIONE NOVAS LOGICAS COMPLEXAS NESTE ARQUIVO.**
+- **Mito do SSR**: O APK do Capacitor é **estático**. O rendering é 100% Client-Side. O excesso de lógica no JS impacta diretamente o tempo de abertura do app.
+- **Mock status**: O projeto usa `userId: 1` fixo em quase todas as rotas.
 
-## 7. Entregas Esperadas
+## 7. Diretriz de Refatoração (Compensação)
+Ao receber tarefas de novas telas ou lógica de UI:
+1. **Externalize**: Crie novos componentes em `src/components/` ou arquivos separados.
+2. **Export Interface**: Reduza a carga do `App.tsx` movendo constantes (como dados de mock e SVGs) para arquivos dedicados.
+
+## 8. Entregas Esperadas
 Ao finalizar uma tarefa:
 1. Implemente a alteração.
 2. Revise impactos.

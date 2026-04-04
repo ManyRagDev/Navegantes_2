@@ -2,77 +2,102 @@
 
 Este documento é a fonte centralizada de contexto funcional e técnico do projeto **Navegantes**. Ele deve ser mantido sincronizado com o código e consultado antes de qualquer alteração relevante.
 
+---
+
 ## 1. Objetivo do Documento
 Servir como o "Mapa da Mina" para desenvolvedores e agentes, detalhando a arquitetura, fluxos, domínios e regras de negócio do ecossistema Navegantes.
 
 ## 2. Visão Geral da Arquitetura
-O sistema segue um modelo de **App Híbrido** com backend em **Node.js (Express)** e frontend em **React (Vite)**, envelopado pelo **Capacitor** para distribuição Android.
-- **Frontend**: SPA reativa com foco em estética vintage.
-- **Backend/API**: Centraliza operações de banco de dados e proxies de segurança (IA).
-- **Persistência**: Camada ORM Prisma acessando PostgreSQL (Supabase) via schema dedicado `navegantes`.
+O sistema segue um modelo de **App Híbrido** (Mobile-First):
+- **Frontend**: Single Page Application (SPA) reativa desenvolvida em **React 19** e **Vite**.
+- **Mobile Wrapper**: **Capacitor** encapsula o frontend em uma WebView nativa para Android (`com.navegantes.app`).
+- **Arquitetura de Renderização**: **100% Client-Side (CSR)** no APK. O APK é estático (lê do `dist/`).
+- **Backend/API**: Servidor **Node.js (Express)** rodando no Railway, que atua como API de dados e Proxy de IA.
+- **Persistência**: **Prisma ORM** acessando **PostgreSQL (Supabase)** no schema `navegantes`.
 
 ## 3. Estrutura do Projeto
-- `android/`: Código-fonte nativo do app gerado pelo Capacitor.
-- `prisma/`: Definições de schema, migrações e banco de dados SQLite de desenvolvimento.
-- `src/`: Código-fonte do frontend.
-  - `src/App.tsx`: **O Monolito** – Contém quase toda a lógica de UI, estado e componentes.
-  - `src/api.ts`: Helper de comunicação com o backend.
-- `server.ts`: Ponto de entrada do backend e servidor de desenvolvimento Vite.
+- `android/`: Código-fonte nativo Gerado pelo Capacitor (Gradle/Java/Kotlin).
+- `prisma/`:
+  - `schema.prisma`: Definição central das entidades.
+  - `dev.db`: SQLite para desenvolvimento local (não deve ser usado em produção).
+- `src/`:
+  - `src/App.tsx`: **O Monolito** – Contém a lógica de UI, roteamento interno (tabs), estado global e componentes visuais.
+  - `src/api.ts`: Helper para resolver URLs da API dinamicamente (Localhost vs Railway).
+  - `src/assets/`: Recursos estáticos e imagens.
+- `server.ts`: Servidor Express e ponto de entrada do backend.
 
-## 4. Pontos de Entrada
-- **API/Server**: `server.ts` – Inicializa o Express, o Prisma e o middleware do Vite.
-- **Frontend**: `src/main.tsx` – Renderiza a raiz do React no `index.html`.
-- **Rotas principais (Backend)**:
-  - `/api/profile`: Perfil do usuário.
-  - `/api/posts`: Feed da comunidade.
-  - `/api/gemini`: Proxy para IA.
-  - `/api/itineraries`: (Planejado/Prisma).
+## 4. Endpoints da API (Backend)
+- **IA Unificada**: `POST /api/ai` - Fachada interna para todas as operações de IA do app. O frontend fala apenas com esta rota, e o backend decide o provider ativo (`pollinations` ou `gemini`) e normaliza a resposta.
+- **Compatibilidade Legada**: `POST /api/gemini` - Mantida temporariamente para builds antigos ainda sincronizarem com o backend enquanto o `dist`/APK é renovado.
+- **Perfil**:
+  - `GET /api/profile`: Busca perfil do usuário logado (atualmente `userId: 1`).
+  - `PUT /api/profile`: Atualiza dados básicos (nome, bio, avatar).
+  - `POST /api/upgrade`: Faz o upgrade para Premium ou adiciona créditos de viagem.
+- **Comunidade (Posts)**:
+  - `GET /api/posts`: Lista feed global.
+  - `POST /api/posts`: Cria uma nova "Memória" (Post).
+  - `POST /api/posts/:id/like`: Incrementa curtidas.
+  - **Status dos comentários**: o backend retorna comentários relacionados em `GET /api/posts`, mas não existe rota dedicada para criar comentários. Novos comentários ainda são tratados localmente no frontend.
+- **Sistema de Selos**: `POST /api/seals` - Registra novos carimbos no passaporte.
+- **Favoritos**:
+  - `POST /api/favorites`: Adiciona local aos favoritos.
+  - `DELETE /api/favorites/:localId`: Remove local dos favoritos.
+- **Roteiros**:
+  - **Status atual**: existem modelos Prisma para `Itinerary`, `Day` e `Stop`, e o perfil carrega roteiros persistidos quando existirem.
+  - **Limitação atual**: ainda não há rotas dedicadas no `server.ts` para criar, editar ou remover roteiros; o fluxo "Criar Novo Roteiro" do app hoje salva apenas no estado local do frontend.
 
-## 5. Mapa dos Módulos / Domínios
-### [UI Monolith] src/App.tsx
-- **Responsabilidade**: Interface do usuário, navegação interna, lógica de mapas e interação com IA.
-- **Entradas**: Dados da API (perfil, posts) e input do usuário (chat, formulários).
-- **Saídas**: Chamadas de rede para o backend.
-- **Riscos**: Acoplamento extremo; dificuldade de teste unitário.
+## 5. Mapa de Domínios e Funcionalidades
 
-### [API Proxy] server.ts
-- **Responsabilidade**: CRUD de dados, proxy para Gemini API, autenticação (mock) e upgrade.
-- **Dependências**: Prisma Client, Express, Vite, Google AI.
-- **Dados**: Produz e consome JSON via endpoints REST.
+### 5.1. Dashboard e Navegação
+O `App.tsx` gerencia a navegação via abas (`activeTab`):
+- **Home**: Dashboard geral com resumo do roteiro ativo e sugestões.
+- **Map**: Mapa interativo (Google Maps) com estilos vintage e pins dinâmicos.
+- **Explore** (`explorar`): Catálogo de locais segmentados por categoria.
+- **Guia IA** (`ia`): Assistente "O Capitão" com sugestões contextuais, saudação por geolocalização e respostas via camada unificada de IA no backend.
+- **Community** (`comunidade`): Feed social de memórias compartilhadas.
+- **Profile** (`perfil`): Perfil do usuário, passaporte de selos e configurações.
 
-### [Data Persistence] prisma/schema.prisma
-- **Responsabilidade**: Definição da estrutura de dados no Postgres.
-- **Entidades**: `User`, `Post`, `Comment`, `Itinerary`, `Day`, `Stop`, `Seal`, `Favorite`.
-- **Regra**: Todo o schema reside em `navegantes`.
+### 5.2. Modo Brasil vs. Mundo
+O app possui um switch global que altera:
+1. Conjunto de dados de locais sugeridos.
+2. Estilo visual do mapa (Cores/Filtros).
+3. Texto e contexto do Assistente IA.
 
-## 6. Fluxos Principais
-### Fluxo de Geração de Roteiro
-1. Usuário solicita roteiro via Chat ou aba Roteiros no `App.tsx`.
-2. Frontend chama `callGeminiProxy`.
-3. Backend (`server.ts`) envia prompt para Gemini Pro com API Key segura.
-4. Gemini retorna JSON com itinerário.
-5. Frontend renderiza o roteiro e permite salvar no banco via Prisma.
+### 5.3. Roteiros de Viagem (Itineraries)
+Modelados via Prisma com a relação: `Itinerary` -> `Day` -> `Stop`.
+- O app oferece criação de roteiros por IA ou por sugestões da comunidade no fluxo de interface.
+- No estado atual, novos roteiros criados pelo modal são adicionados apenas ao estado local do frontend; ainda não existe persistência completa via rota própria no backend.
+- Possuem "temas" (Ex: Aventura, Gastronomia).
 
-### Fluxo de Criação de Memória (Post)
-1. Usuário seleciona imagem e escreve texto no `App.tsx`.
-2. O dado é enviado para `POST /api/posts`.
-3. O backend persiste no banco e o feed é atualizado via re-fetch.
+### 5.4. Gamification (Passaporte)
+Sistema de "Carimbos" (`Seals`) automáticos baseados em:
+- Visitar (favoritar) locais específicos.
+- Completar roteiros em certas cidades.
 
-## 7. Integrações Externas
-- **Google Maps API**: Renderiza mapas e marcadores no frontend.
-- **Google Gemini Pro**: Cérebro da aplicação para roteiros e assistência.
-- **Capacitor**: Ponte entre a webview e as APIs nativas do Android.
+## 6. Fluxos Críticos e Integrações
+- **Geolocalização**: O app tenta detectar a localização do usuário para sugerir atividades em tempo real via IA.
+- **Operações de IA**: O backend organiza os casos de uso de IA por operação (`captain_chat`, `captain_greeting`, `city_lookup`, `quick_suggestions`, `dashboard_suggestions`, `itinerary_suggestions`) e devolve um contrato estável para o app.
+- **Navegação Externa**: Integração com Google Maps App e Waze para rotas guiadas.
+- **PWA/Instalação**: Suporte a `beforeinstallprompt` para instalação na Home do dispositivo fora da Play Store.
 
-## 8. Regras de Negócio Relevantes
-- **Passaporte (Gamification)**: Ações como favoritar locais geram "Selos" automático (`stampPassport`).
-- **Premium/Credits**: O app utiliza um sistema de créditos para geração de roteiros, liberado para usuários Premium.
-- **Multimodal (Mundo vs Brasil)**: O app chaveia conjuntos de dados e estilos de mapa baseados no modo selecionado.
+## 7. Melhores Práticas e Regras de Ouro
+1. **Schema PostgreSQL**: Utilize sempre `@@schema("navegantes")`.
+2. **Segredos**: Nunca coloque chaves de API no frontend. Chaves de IA devem ficar apenas no backend e serem usadas via `/api/ai`.
+3. **Consistência Visual**: Mantenha a paleta de cores Vintage (Creme, Marrom, Ferrugem, Azul Vintage) definida em `COLORS`.
+4. **Tailwind v4**: Use utilitários do Tailwind 4 e evite CSS inline complexo.
 
-## 9. Observações, Riscos e Acoplamentos
-- **Acoplamento**: A lógica de navegação e componentes visuais estão todos fundidos no `App.tsx`, tornando mudanças na interface perigosas sem revisão cuidadosa.
-- **Hardcoding**: A dependência de `userId: 1` é onipresente.
-- **Inconsistência DB**: O projeto usa SQLite para desenvolvimento (`prisma/dev.db`), mas o schema oficial exige PostgreSQL.
+## 8. Riscos e Dívida Técnica
+- **Aceleração do App.tsx**: O arquivo está se tornando difícil de gerenciar (>3k linhas). Refatoração para componentes funcionais separados é prioritária.
+- **Mock de Usuário**: A dependência de `userId: 1` fixa impede multi-usuários reais (aguarda auth real).
+- **Compatibilidade Temporária**: a rota legada `/api/gemini` foi mantida apenas para absorver builds antigos até que todo o ciclo `build` + `cap sync` esteja atualizado.
+- **Persistência Parcial de Funcionalidades**: comentários de posts e criação de roteiros ainda possuem comportamento parcial/local no frontend, sem cobertura completa de rotas dedicadas no backend.
+- **SQLite em Dev**: Gera discrepâncias com o PostgreSQL de produção ( Railway/Supabase).
 
-## 10. Lacunas de Conhecimento
-- O sistema de autenticação real ainda não foi definido (Firebase, Auth.js ou Supabase Auth).
-- A política de faturamento da API Google Maps para produção precisa de revisão (limites/restrições).
+## 9. Observações sobre Mobile (Capacitor)
+- O build móvel depende do comando `npm run build` seguido de `cap sync`.
+- A performance no WebView é o principal gargalo de escalabilidade devido ao tamanho do bundle JS.
+
+## 10. Regras de Ambiente
+- **Desenvolvimento local**: mantenha `VITE_API_BASE_URL` vazio em `.env.local` para que o frontend use rotas relativas `/api/...` e converse com o backend local iniciado por `npm run dev`.
+- **Produção / Mobile**: defina `VITE_API_BASE_URL` com a URL pública do backend Railway no ambiente de build para que o bundle publicado aponte para a API remota.
+- **Segurança**: `VITE_*` deve conter apenas configuração pública. Chaves de provedores de IA devem permanecer somente no backend.

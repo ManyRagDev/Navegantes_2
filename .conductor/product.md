@@ -15,8 +15,9 @@ Navegantes é uma rede social e planejador de viagens com uma estética retrô d
 - **O Colecionador de Memórias**: Valoriza o registro visual e histórico de suas jornadas.
 
 # Roadmap (Inferido)
-- [x] Base mobile com Capacitor.
-- [x] Integração básica com Gemini (Proxy).
-- [/] Migração para banco de dados robusto (Supabase).
-- [ ] Autenticação real de usuários.
-- [ ] Sistema de créditos real para geração de roteiros.
+- [x] Base mobile com Capacitor (Android).
+- [x] Integração robusta com Gemini (Proxy).
+- [x] Migração para PostgreSQL/Supabase (Schema `navegantes`).
+- [x] Sistema de Carimbos (Digital Seals) e Favoritos.
+- [ ] Autenticação real de usuários (Firebase/Auth.js).
+- [ ] Sistema de créditos real e faturamento.

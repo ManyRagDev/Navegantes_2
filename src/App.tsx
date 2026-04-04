@@ -53,6 +53,26 @@ interface FavoriteList {
   items: number[]; // IDs de locais
 }
 
+interface AISuggestion {
+  id: number | string;
+  title: string;
+  description: string;
+  time?: string;
+  icon?: string;
+  rating?: number;
+  img?: string;
+}
+
+interface AIResponse<TData = unknown> {
+  ok: boolean;
+  type: 'text' | 'structured';
+  provider?: string;
+  model?: string;
+  text: string;
+  data: TData;
+  error?: string;
+}
+
 // --- CONFIGURAÇÃO E DADOS ---
 
 const COLORS = {
@@ -191,15 +211,110 @@ const formatMessage = (text: string) => {
 
 // --- CONSTANTES E ESTILOS ---
 
-// Função auxiliar para chamar o proxy do Gemini (protege a API Key)
-const callGeminiProxy = async (model: string, contents: any, config?: any) => {
-  const response = await fetch(apiUrl("/api/gemini"), {
+const inferLegacyOperation = (prompt: string) => {
+  if (prompt.includes("Latitude:") && prompt.includes("Longitude:")) return 'city_lookup';
+  if (prompt.includes('Dê as boas-vindas como "O Capitão"')) return 'captain_greeting';
+  if (prompt.includes('Sugira 5 pontos turísticos imperdíveis em')) return 'itinerary_suggestions';
+  if (prompt.includes('Baseado no clima de')) return 'quick_suggestions';
+  if (prompt.includes('Sugira os 10 melhores locais para visitar agora')) return 'dashboard_suggestions';
+  return 'captain_chat';
+};
+
+const inferLegacyInput = (prompt: string, config?: any) => {
+  const operation = inferLegacyOperation(prompt);
+
+  if (operation === 'city_lookup') {
+    const latitudeMatch = prompt.match(/Latitude:\s*([^,]+),/i);
+    const longitudeMatch = prompt.match(/Longitude:\s*([^.\n]+)/i);
+    return {
+      operation,
+      input: {
+        latitude: latitudeMatch?.[1]?.trim() || '',
+        longitude: longitudeMatch?.[1]?.trim() || ''
+      }
+    };
+  }
+
+  if (operation === 'captain_greeting') {
+    const locationMatch = prompt.match(/Ele está em (.+?)\./i);
+    return {
+      operation,
+      input: {
+        location: locationMatch?.[1]?.trim() || 'coordenadas interessantes'
+      }
+    };
+  }
+
+  if (operation === 'itinerary_suggestions') {
+    const destinationMatch = prompt.match(/imperdíveis em (.+?)\./i);
+    return {
+      operation,
+      input: {
+        destination: destinationMatch?.[1]?.trim() || ''
+      }
+    };
+  }
+
+  if (operation === 'quick_suggestions') {
+    const cityMatch = prompt.match(/Estou em (.+?)\. Baseado/i);
+    const weatherMatch = prompt.match(/clima de (.+?), sugira/i);
+    return {
+      operation,
+      input: {
+        city: cityMatch?.[1]?.trim() || '',
+        weather: weatherMatch?.[1]?.trim() || ''
+      }
+    };
+  }
+
+  if (operation === 'dashboard_suggestions') {
+    const cityMatch = prompt.match(/Estou em (.+?)\. Sugira/i);
+    return {
+      operation,
+      input: {
+        city: cityMatch?.[1]?.trim() || ''
+      }
+    };
+  }
+
+  return {
+    operation,
+    input: {
+      userText: prompt,
+      mode:
+        (typeof config?.systemInstruction === 'string' && config.systemInstruction.includes('explorar o Brasil')) || prompt.includes('explorar o Brasil')
+          ? 'o Brasil'
+          : (typeof config?.systemInstruction === 'string' && config.systemInstruction.includes('explorar o Mundo')) || prompt.includes('explorar o Mundo')
+            ? 'o Mundo'
+            : undefined,
+      systemInstruction: config?.systemInstruction
+    }
+  };
+};
+
+// Função auxiliar para chamar o proxy Pollinations AI (protege a API Key)
+const callAI = async <TData = unknown>(operationOrModel: string, inputOrPrompt?: Record<string, unknown> | string, config?: any) => {
+  const isLegacyPromptCall = typeof inputOrPrompt === 'string';
+  const payload = isLegacyPromptCall
+    ? inferLegacyInput(inputOrPrompt, config)
+    : { operation: operationOrModel, input: inputOrPrompt };
+
+  const response = await fetch(apiUrl("/api/ai"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, contents, config })
+    body: JSON.stringify(payload)
   });
-  const data = await response.json();
-  if (data.error) throw new Error(data.error);
+  const data: AIResponse<TData> = await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao comunicar com a IA");
+
+  if (isLegacyPromptCall && data.type === 'structured') {
+    const structuredData = data.data as { items?: AISuggestion[]; city?: string } | null;
+    const legacyText = structuredData?.city
+      ? structuredData.city
+      : JSON.stringify(structuredData?.items || []);
+    return { ...data, text: legacyText } as AIResponse<TData>;
+  }
+
   return data;
 };
 
@@ -652,7 +767,7 @@ export default function App() {
 
     setIsSearchingCity(true);
     try {
-      const response = await callGeminiProxy("gemini-3-flash-preview", `Sugira 5 pontos turísticos imperdíveis em ${newItineraryDest}. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Breve descrição", "time": "09:00"}, ...]`, {
+      const response = await callAI("openai", `Sugira 5 pontos turísticos imperdíveis em ${newItineraryDest}. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Breve descrição", "time": "09:00"}, ...]`, {
         responseMimeType: "application/json"
       });
       
@@ -671,7 +786,7 @@ export default function App() {
     setIsIaLoading(true);
     setShowIAAssistant(true);
     try {
-      const response = await callGeminiProxy("gemini-3-flash-preview", `Estou em ${dados.roteiro.cidade}. Baseado no clima de ${dados.roteiro.clima}, sugira 3 atividades rápidas ou locais próximos para visitar agora. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Por que ir agora", "icon": "emoji"}]`, {
+      const response = await callAI("openai", `Estou em ${dados.roteiro.cidade}. Baseado no clima de ${dados.roteiro.clima}, sugira 3 atividades rápidas ou locais próximos para visitar agora. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Por que ir agora", "icon": "emoji"}]`, {
         responseMimeType: "application/json"
       });
       
@@ -688,7 +803,7 @@ export default function App() {
   const fetchDashboardSuggestions = async (city: string) => {
     setIsDashboardIaLoading(true);
     try {
-      const response = await callGeminiProxy("gemini-3-flash-preview", `Estou em ${city}. Sugira os 10 melhores locais para visitar agora (restaurantes, parques ou pontos turísticos). Retorne apenas um JSON no formato: [{"id": "ia1", "title": "Nome", "description": "Por que ir", "icon": "emoji", "rating": 4.9, "img": "https://images.unsplash.com/..."}]`, {
+      const response = await callAI("openai", `Estou em ${city}. Sugira os 10 melhores locais para visitar agora (restaurantes, parques ou pontos turísticos). Retorne apenas um JSON no formato: [{"id": "ia1", "title": "Nome", "description": "Por que ir", "icon": "emoji", "rating": 4.9, "img": "https://images.unsplash.com/..."}]`, {
         responseMimeType: "application/json"
       });
       
@@ -876,7 +991,7 @@ export default function App() {
         const { latitude, longitude } = position.coords;
         setUserCoords({ lat: latitude, lng: longitude });
         try {
-          const response = await callGeminiProxy("gemini-3-flash-preview", `O usuário está nas coordenadas Latitude: ${latitude}, Longitude: ${longitude}. Identifique a cidade e o estado/país aproximado. Responda APENAS o nome da cidade e estado/país, ex: "São Paulo, Brasil".`);
+          const response = await callAI("openai", `O usuário está nas coordenadas Latitude: ${latitude}, Longitude: ${longitude}. Identifique a cidade e o estado/país aproximado. Responda APENAS o nome da cidade e estado/país, ex: "São Paulo, Brasil".`);
           const locationText = (response.text || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`).trim();
           setUserCity(locationText);
         } catch (error) {
@@ -909,7 +1024,7 @@ export default function App() {
             const { latitude, longitude } = position.coords;
             
             try {
-              const response = await callGeminiProxy("gemini-3-flash-preview", `O usuário abriu o guia. Ele está em ${userCity || 'coordenadas Latitude: ' + latitude + ', Longitude: ' + longitude}. Dê as boas-vindas como "O Capitão", mencione que você o localizou pelo GPS e comente algo breve e nostálgico sobre estar nessa região ou sobre a jornada de explorador. Seja breve (máximo 2 parágrafos).`, {
+              const response = await callAI("openai", `O usuário abriu o guia. Ele está em ${userCity || 'coordenadas Latitude: ' + latitude + ', Longitude: ' + longitude}. Dê as boas-vindas como "O Capitão", mencione que você o localizou pelo GPS e comente algo breve e nostálgico sobre estar nessa região ou sobre a jornada de explorador. Seja breve (máximo 2 parágrafos).`, {
                 systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. Mantenha as respostas curtas. Use emojis retrô como 🧭, ⚓, 📜, 🗺️.`
               });
 
@@ -965,7 +1080,7 @@ export default function App() {
       //   setProfileData(prev => ({ ...prev, credits: Math.max(0, prev.credits - 1) }));
       // }
 
-      const response = await callGeminiProxy("gemini-3-flash-preview", userText, {
+      const response = await callAI("openai", userText, {
         systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. Você está ajudando o usuário a explorar ${modoAtivo === 'brasil' ? 'o Brasil' : 'o Mundo'}. Mantenha as respostas curtas (máximo 3 parágrafos). Use emojis retrô como 🧭, ⚓, 📜, 🗺️. Se o usuário perguntar sobre um lugar específico, dê uma dica "escondida" ou pouco conhecida.`
       });
 
