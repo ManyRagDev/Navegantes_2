@@ -13,18 +13,19 @@ O sistema segue um modelo de **App Híbrido** (Mobile-First):
 - **Mobile Wrapper**: **Capacitor** encapsula o frontend em uma WebView nativa para Android (`com.navegantes.app`).
 - **Arquitetura de Renderização**: **100% Client-Side (CSR)** no APK. O APK é estático (lê do `dist/`).
 - **Backend/API**: Servidor **Node.js (Express)** rodando no Railway, que atua como API de dados e Proxy de IA.
-- **Persistência**: **Prisma ORM** acessando **PostgreSQL (Supabase)** no schema `navegantes`.
+- **Persistência**: Backend acessando **Supabase** no schema `navegantes` via `@supabase/supabase-js` com credenciais server-side.
 
 ## 3. Estrutura do Projeto
 - `android/`: Código-fonte nativo Gerado pelo Capacitor (Gradle/Java/Kotlin).
 - `prisma/`:
-  - `schema.prisma`: Definição central das entidades.
-  - `dev.db`: SQLite para desenvolvimento local (não deve ser usado em produção).
+  - `schema.prisma`: Definição histórica/estrutural das entidades do schema `navegantes`.
+  - `dev.db`: SQLite legado de desenvolvimento (não deve ser usado em produção).
 - `src/`:
   - `src/App.tsx`: **O Monolito** – Contém a lógica de UI, roteamento interno (tabs), estado global e componentes visuais.
   - `src/api.ts`: Helper para resolver URLs da API dinamicamente (Localhost vs Railway).
   - `src/assets/`: Recursos estáticos e imagens.
 - `server.ts`: Servidor Express e ponto de entrada do backend.
+- `serverData.ts`: Camada de acesso a dados do backend via Supabase.
 
 ## 4. Endpoints da API (Backend)
 - **IA Unificada**: `POST /api/ai` - Fachada interna para todas as operações de IA do app. O frontend fala apenas com esta rota, e o backend decide o provider ativo (`pollinations` ou `gemini`) e normaliza a resposta.
@@ -43,7 +44,7 @@ O sistema segue um modelo de **App Híbrido** (Mobile-First):
   - `POST /api/favorites`: Adiciona local aos favoritos.
   - `DELETE /api/favorites/:localId`: Remove local dos favoritos.
 - **Roteiros**:
-  - **Status atual**: existem modelos Prisma para `Itinerary`, `Day` e `Stop`, e o perfil carrega roteiros persistidos quando existirem.
+  - **Status atual**: existem modelos históricos no schema para `Itinerary`, `Day` e `Stop`, e o perfil carrega roteiros persistidos quando existirem.
   - **Limitação atual**: ainda não há rotas dedicadas no `server.ts` para criar, editar ou remover roteiros; o fluxo "Criar Novo Roteiro" do app hoje salva apenas no estado local do frontend.
 
 ## 5. Mapa de Domínios e Funcionalidades
@@ -91,7 +92,7 @@ Sistema de "Carimbos" (`Seals`) automáticos baseados em:
 - **Mock de Usuário**: A dependência de `userId: 1` fixa impede multi-usuários reais (aguarda auth real).
 - **Compatibilidade Temporária**: a rota legada `/api/gemini` foi mantida apenas para absorver builds antigos até que todo o ciclo `build` + `cap sync` esteja atualizado.
 - **Persistência Parcial de Funcionalidades**: comentários de posts e criação de roteiros ainda possuem comportamento parcial/local no frontend, sem cobertura completa de rotas dedicadas no backend.
-- **SQLite em Dev**: Gera discrepâncias com o PostgreSQL de produção ( Railway/Supabase).
+- **Legado Prisma/SQLite**: arquivos Prisma e `dev.db` permanecem no repositório como referência estrutural, mas o backend ativo usa Supabase diretamente.
 
 ## 9. Observações sobre Mobile (Capacitor)
 - O build móvel depende do comando `npm run build` seguido de `cap sync`.
@@ -101,3 +102,4 @@ Sistema de "Carimbos" (`Seals`) automáticos baseados em:
 - **Desenvolvimento local**: mantenha `VITE_API_BASE_URL` vazio em `.env.local` para que o frontend use rotas relativas `/api/...` e converse com o backend local iniciado por `npm run dev`.
 - **Produção / Mobile**: defina `VITE_API_BASE_URL` com a URL pública do backend Railway no ambiente de build para que o bundle publicado aponte para a API remota.
 - **Segurança**: `VITE_*` deve conter apenas configuração pública. Chaves de provedores de IA devem permanecer somente no backend.
+- **Backend de dados**: configure `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` no Railway; `DATABASE_URL` deixa de ser obrigatória para as rotas principais.

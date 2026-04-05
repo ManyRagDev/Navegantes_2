@@ -2,13 +2,23 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { readFile } from "node:fs/promises";
-import { PrismaClient } from "@prisma/client";
 import cors from "cors";
 import dotenv from "dotenv";
+import {
+  addFavorite,
+  checkDatabaseHealth,
+  createPost,
+  createSeal,
+  getPosts,
+  getProfile,
+  likePost,
+  removeFavorite,
+  updateProfile,
+  upgradeProfile,
+} from "./serverData";
 
 dotenv.config();
 
-const prisma = new PrismaClient();
 const app = express();
 const PORT = 3000;
 
@@ -481,9 +491,117 @@ app.post("/api/gemini", async (req, res) => {
 
 // --- API ROUTES ---
 
+app.get("/api/health/db", async (req, res) => {
+  try {
+    const status = await checkDatabaseHealth();
+    res.json(status);
+  } catch (error) {
+    console.error("[health/db] Erro:", error);
+    res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.get("/api/profile", async (req, res) => {
   try {
-    let user = await prisma.user.findUnique({
+    const user = await getProfile();
+    res.json(user);
+  } catch (error) {
+    console.error("[profile:v2] Erro:", error);
+    res.status(500).json({ error: "Erro ao buscar perfil", details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post("/api/upgrade", async (req, res) => {
+  const { type, days } = req.body;
+  try {
+    const user = await upgradeProfile({ type, days });
+    res.json(user);
+  } catch (error) {
+    console.error("[upgrade:v2] Erro:", error);
+    res.status(500).json({ error: "Erro no upgrade" });
+  }
+});
+
+app.put("/api/profile", async (req, res) => {
+  const { name, bio, avatar } = req.body;
+  try {
+    const user = await updateProfile({ name, bio, avatar });
+    res.json(user);
+  } catch (error) {
+    console.error("[profile:update:v2] Erro:", error);
+    res.status(500).json({ error: "Erro ao atualizar perfil" });
+  }
+});
+
+app.get("/api/posts", async (req, res) => {
+  try {
+    const posts = await getPosts();
+    res.json(posts);
+  } catch (error) {
+    console.error("[posts:v2] Erro:", error);
+    res.status(500).json({ error: "Erro ao buscar posts" });
+  }
+});
+
+app.post("/api/posts", async (req, res) => {
+  const { local, texto, img } = req.body;
+  try {
+    const post = await createPost({ local, texto, img });
+    res.json(post);
+  } catch (error) {
+    console.error("[posts:create:v2] Erro:", error);
+    res.status(500).json({ error: "Erro ao criar post" });
+  }
+});
+
+app.post("/api/posts/:id/like", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const post = await likePost(parseInt(id));
+    res.json(post);
+  } catch (error) {
+    console.error("[posts:like:v2] Erro:", error);
+    res.status(500).json({ error: "Erro ao curtir post" });
+  }
+});
+
+app.post("/api/seals", async (req, res) => {
+  const { name, icon, color } = req.body;
+  try {
+    const seal = await createSeal({ name, icon, color });
+    res.json(seal);
+  } catch (error) {
+    console.error("[seals:create:v2] Erro:", error);
+    res.status(500).json({ error: "Erro ao criar selo" });
+  }
+});
+
+app.post("/api/favorites", async (req, res) => {
+  const { localId } = req.body;
+  try {
+    const favorite = await addFavorite(localId);
+    res.json(favorite);
+  } catch (error) {
+    console.error("[favorites:create:v2] Erro:", error);
+    res.status(500).json({ error: "Erro ao favoritar" });
+  }
+});
+
+app.delete("/api/favorites/:localId", async (req, res) => {
+  const { localId } = req.params;
+  try {
+    await removeFavorite(parseInt(localId));
+    res.json({ status: "ok" });
+  } catch (error) {
+    console.error("[favorites:delete:v2] Erro:", error);
+    res.status(500).json({ error: "Erro ao remover favorito" });
+  }
+});
+
+/* Legacy Prisma routes kept only as reference while Supabase-backed routes stay active above.
+app.get("/api/profile", async (req, res) => {
+  try {
+    const user = await getProfile();
       where: { id: 1 },
       include: {
         seals: true,
@@ -658,6 +776,7 @@ app.delete("/api/favorites/:localId", async (req, res) => {
     res.status(500).json({ error: "Erro ao remover favorito" });
   }
 });
+*/
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
