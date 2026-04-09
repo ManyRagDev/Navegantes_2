@@ -73,6 +73,35 @@ interface AIResponse<TData = unknown> {
   error?: string;
 }
 
+interface NearbyPlace {
+  placeId: string;
+  name: string;
+  address: string;
+  distanceMeters: number | null;
+  rating: number | null;
+  userRatingsTotal: number | null;
+  photoUrl: string;
+  categories: string[];
+  isOpenNow: boolean | null;
+  icon: string;
+  description: string;
+  latitude: number;
+  longitude: number;
+}
+
+interface AIChatRouteResponse {
+  ok: boolean;
+  intent: string;
+  confidence: number;
+  executor: string;
+  text: string;
+  data: {
+    items?: NearbyPlace[];
+    city?: string | null;
+  } | null;
+  error?: string;
+}
+
 // --- CONFIGURAÇÃO E DADOS ---
 
 const COLORS = {
@@ -316,6 +345,35 @@ const callAI = async <TData = unknown>(operationOrModel: string, inputOrPrompt?:
   }
 
   return data;
+};
+
+const callCaptainChat = async (message: string, context?: Record<string, unknown>) => {
+  const response = await fetch(apiUrl("/api/ai/chat"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, context })
+  });
+  const data: AIChatRouteResponse = await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao conversar com o Capitão");
+  return data;
+};
+
+const callNearbyPlaces = async (payload: Record<string, unknown>) => {
+  const response = await fetch(apiUrl("/api/places/nearby"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao buscar lugares próximos");
+  return data as { ok: true; items: NearbyPlace[]; source: string };
+};
+
+const callReverseGeocode = async (lat: number, lng: number) => {
+  const response = await fetch(apiUrl(`/api/geo/reverse-geocode?lat=${lat}&lng=${lng}`));
+  const data = await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao identificar cidade");
+  return data as { ok: true; city: string; data: { formattedLocation: string } };
 };
 
 const MAP_STYLES = [
@@ -767,11 +825,11 @@ export default function App() {
 
     setIsSearchingCity(true);
     try {
-      const response = await callAI("openai", `Sugira 5 pontos turísticos imperdíveis em ${newItineraryDest}. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Breve descrição", "time": "09:00"}, ...]`, {
-        responseMimeType: "application/json"
+      const response = await callAI<{ items?: AISuggestion[] }>("itinerary_suggestions", {
+        destination: newItineraryDest,
+        mode: modoAtivo
       });
-      
-      const suggestions = JSON.parse(response.text || '[]');
+      const suggestions = response.data?.items || [];
       setCitySuggestions(suggestions);
       setItineraryStep('suggestions');
     } catch (error) {
@@ -786,11 +844,19 @@ export default function App() {
     setIsIaLoading(true);
     setShowIAAssistant(true);
     try {
-      const response = await callAI("openai", `Estou em ${dados.roteiro.cidade}. Baseado no clima de ${dados.roteiro.clima}, sugira 3 atividades rápidas ou locais próximos para visitar agora. Retorne apenas um JSON no formato: [{"id": 1, "title": "Nome", "description": "Por que ir agora", "icon": "emoji"}]`, {
-        responseMimeType: "application/json"
+      const response = await callNearbyPlaces({
+        lat: userCoords?.lat,
+        lng: userCoords?.lng,
+        city: userCity,
+        mode: modoAtivo,
+        placeQuery: dados.roteiro.clima?.includes('°') ? 'lugares interessantes' : 'cafes e pontos culturais'
       });
-      
-      const suggestions = JSON.parse(response.text || '[]');
+      const suggestions = response.items.slice(0, 3).map((item) => ({
+        id: item.placeId,
+        title: item.name,
+        description: item.address || item.description,
+        icon: item.icon
+      }));
       setIaSuggestions(suggestions);
     } catch (error) {
       console.error("Erro no Assistente IA:", error);
@@ -803,11 +869,21 @@ export default function App() {
   const fetchDashboardSuggestions = async (city: string) => {
     setIsDashboardIaLoading(true);
     try {
-      const response = await callAI("openai", `Estou em ${city}. Sugira os 10 melhores locais para visitar agora (restaurantes, parques ou pontos turísticos). Retorne apenas um JSON no formato: [{"id": "ia1", "title": "Nome", "description": "Por que ir", "icon": "emoji", "rating": 4.9, "img": "https://images.unsplash.com/..."}]`, {
-        responseMimeType: "application/json"
+      const response = await callNearbyPlaces({
+        lat: userCoords?.lat,
+        lng: userCoords?.lng,
+        city,
+        mode: modoAtivo,
+        placeQuery: 'lugares para visitar'
       });
-      
-      const suggestions = JSON.parse(response.text || '[]');
+      const suggestions = response.items.slice(0, 10).map((item) => ({
+        id: item.placeId,
+        title: item.name,
+        description: item.address || item.description,
+        icon: item.icon,
+        rating: item.rating || 4.5,
+        img: item.photoUrl || 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&q=80&w=600&h=400'
+      }));
       setDashboardSuggestions(suggestions);
     } catch (error) {
       console.error("Erro ao buscar sugestões do dashboard:", error);
@@ -991,8 +1067,8 @@ export default function App() {
         const { latitude, longitude } = position.coords;
         setUserCoords({ lat: latitude, lng: longitude });
         try {
-          const response = await callAI("openai", `O usuário está nas coordenadas Latitude: ${latitude}, Longitude: ${longitude}. Identifique a cidade e o estado/país aproximado. Responda APENAS o nome da cidade e estado/país, ex: "São Paulo, Brasil".`);
-          const locationText = (response.text || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`).trim();
+          const response = await callReverseGeocode(latitude, longitude);
+          const locationText = (response.city || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`).trim();
           setUserCity(locationText);
         } catch (error) {
           console.error("Erro ao identificar cidade:", error);
@@ -1024,8 +1100,12 @@ export default function App() {
             const { latitude, longitude } = position.coords;
             
             try {
-              const response = await callAI("openai", `O usuário abriu o guia. Ele está em ${userCity || 'coordenadas Latitude: ' + latitude + ', Longitude: ' + longitude}. Dê as boas-vindas como "O Capitão", mencione que você o localizou pelo GPS e comente algo breve e nostálgico sobre estar nessa região ou sobre a jornada de explorador. Seja breve (máximo 2 parágrafos).`, {
-                systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. Mantenha as respostas curtas. Use emojis retrô como 🧭, ⚓, 📜, 🗺️.`
+              const response = await callCaptainChat("Acabei de abrir o guia. Me dê uma saudação inicial curta.", {
+                lat: latitude,
+                lng: longitude,
+                userCity: userCity || null,
+                activeTab: 'ia',
+                mode: modoAtivo
               });
 
               const botText = response.text || `Ahoy! Vejo que você está em ${userCity || 'coordenadas interessantes'}. Pronto para a aventura?`;
@@ -1045,7 +1125,7 @@ export default function App() {
 
       getGreeting();
     }
-  }, [activeTab, userCity]);
+  }, [activeTab, userCity, modoAtivo]);
 
   const handleNewSession = () => {
     setMessages([]);
@@ -1080,8 +1160,14 @@ export default function App() {
       //   setProfileData(prev => ({ ...prev, credits: Math.max(0, prev.credits - 1) }));
       // }
 
-      const response = await callAI("openai", userText, {
-        systemInstruction: `Você é um guia de viagem vintage e experiente chamado "O Capitão". Seu tom é nostálgico, encorajador e cheio de curiosidades históricas. Você está ajudando o usuário a explorar ${modoAtivo === 'brasil' ? 'o Brasil' : 'o Mundo'}. Mantenha as respostas curtas (máximo 3 parágrafos). Use emojis retrô como 🧭, ⚓, 📜, 🗺️. Se o usuário perguntar sobre um lugar específico, dê uma dica "escondida" ou pouco conhecida.`
+      const response = await callCaptainChat(userText, {
+        lat: userCoords?.lat,
+        lng: userCoords?.lng,
+        userCity,
+        activeTab: 'ia',
+        selectedPlaceName: selectedLocal?.title || selectedLocal?.nome || null,
+        selectedPlaceAddress: selectedLocal?.location || null,
+        mode: modoAtivo
       });
 
       const botText = response.text || "Desculpe, meu rádio está com interferência. Pode repetir?";
@@ -1409,17 +1495,28 @@ export default function App() {
 
   const [selectedMarker, setSelectedMarker] = useState<any>(null);
 
+  useEffect(() => {
+    if (activeTab !== 'map' || !map || !isLoaded) return;
+
+    const handle = window.setTimeout(() => {
+      google.maps.event.trigger(map, 'resize');
+      map.panTo(center);
+    }, 250);
+
+    return () => window.clearTimeout(handle);
+  }, [activeTab, map, isLoaded, center]);
+
   const renderMap = () => {
     return (
-      <div className="relative h-full flex flex-col">
+      <div className="relative h-full min-h-0 flex flex-col">
         <div className="p-3 z-10 shadow-md border-b-4 border-[#5a3c28] transition-colors duration-500" style={{ backgroundColor: modoAtivo === 'brasil' ? '#2c5e40' : '#b45a35' }}>
           <div className="relative">
             <input type="text" placeholder="Buscar local no mapa..." className="w-full bg-[#f3ecdb] border-2 border-[#5a3c28] rounded-full py-2 pl-9 pr-4 font-retro-body font-bold text-[#4a3320] shadow-[2px_2px_0px_#5a3c28] text-sm"/>
             <Search className="absolute left-3 top-2.5 text-[#5a3c28]" size={16} />
           </div>
         </div>
-        
-        <div className="flex-grow relative overflow-hidden bg-[#f3ecdb]">
+
+        <div className="flex-grow relative overflow-hidden bg-[#f3ecdb] min-h-[420px]">
           {(loadError || authError) ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-[#f3ecdb] z-50">
               <div className="text-red-500 mb-4">
@@ -2424,7 +2521,7 @@ export default function App() {
   };
 
   return (
-    <div className="w-full min-h-[100dvh] bg-[#f3ecdb] font-retro-body text-[#4a3320] relative flex flex-col overflow-hidden">
+    <div className="w-full h-[100dvh] bg-[#f3ecdb] font-retro-body text-[#4a3320] relative flex flex-col overflow-hidden">
         <header className="pt-10 pb-3 px-4 relative border-b-4 border-[#5a3c28] shadow-md z-40 flex-shrink-0 transition-colors duration-500 ease-in-out" style={{ backgroundColor: modoAtivo === 'brasil' ? '#2c5e40' : '#b45a35', color: '#f3ecdb' }}>
           <ModoSwitch modoAtual={modoAtivo} toggleModo={toggleModo} />
           <div className="flex items-center gap-2.5 mt-2">
@@ -2436,7 +2533,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-grow overflow-hidden relative">
+        <main className="flex-1 min-h-0 overflow-hidden relative flex">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -2444,7 +2541,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="h-full w-full"
+              className="h-full min-h-0 w-full flex flex-col"
             >
               {activeTab === 'home' && renderHome()}
               {activeTab === 'map' && renderMap()}

@@ -5,3 +5,4 @@
 - [x] Segurança e Autenticação
 - [x] Preparação para Deploy (Railway)
 - [ ] Polimento de Interface Mobile
+- [ ] IA Hibrida com Places e Roteador de Intencao
