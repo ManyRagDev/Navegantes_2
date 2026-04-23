@@ -136,9 +136,9 @@ const DADOS_MODO = {
       paradaAtual: { id: 0, hora: '--:--', titulo: 'InÃ­cio da Jornada', categoria: 'Aventura', descricao: 'Abra o mapa para definir seu prÃ³ximo destino.', icon: Compass, status: 'atual' },
     },
     locaisExplorar: [
-      { id: 1, cidade: 'Paris', nome: 'Shakespeare & Co', categoria: 'Livraria', rating: 4.9, img: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Paris, FranÃ§a', title: 'Shakespeare & Co', description: 'Livraria histÃ³rica em Paris.' },
-      { id: 2, cidade: 'Paris', nome: 'Sainte-Chapelle', categoria: 'Monumento', rating: 4.8, img: 'https://images.unsplash.com/photo-1543339174-8db91b9201a0?auto=format&fit=crop&q=80&w=400&h=400', saved: false, location: 'Paris, FranÃ§a', title: 'Sainte-Chapelle', description: 'Capela gÃ³tica famosa pelos vitrais.' },
-      { id: 3, cidade: 'Roma', nome: 'Coliseu', categoria: 'Monumento', rating: 5.0, img: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Roma, ItÃ¡lia', title: 'Coliseu', description: 'O maior anfiteatro jÃ¡ construÃ­do.' },
+      { id: 1, cidade: 'Paris', nome: 'Shakespeare & Co', categoria: 'Livraria', rating: 4.9, img: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Paris, França', title: 'Shakespeare & Co', description: 'Livraria histórica em Paris.' },
+      { id: 2, cidade: 'Paris', nome: 'Sainte-Chapelle', categoria: 'Monumento', rating: 4.8, img: 'https://images.unsplash.com/photo-1543339174-8db91b9201a0?auto=format&fit=crop&q=80&w=400&h=400', saved: false, location: 'Paris, França', title: 'Sainte-Chapelle', description: 'Capela gótica famosa pelos vitrais.' },
+      { id: 3, cidade: 'Roma', nome: 'Coliseu', categoria: 'Monumento', rating: 5.0, img: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Roma, Itália', title: 'Coliseu', description: 'O maior anfiteatro já construído.' },
     ],
     chatInicial: [
       { id: 1, type: 'bot', text: 'SaudaÃ§Ãµes, navegante! Sou o seu CapitÃ£o. Para onde os ventos da curiosidade nos levarÃ£o hoje? ðŸ§­', time: 'Agora' },
@@ -157,9 +157,9 @@ const DADOS_MODO = {
       paradaAtual: { id: 0, hora: '--:--', titulo: 'InÃ­cio da Jornada', categoria: 'Aventura', descricao: 'Abra o mapa para descobrir tesouros nacionais.', icon: Compass, status: 'atual' },
     },
     locaisExplorar: [
-      { id: 4, cidade: 'Rio de Janeiro', nome: 'Cristo Redentor', categoria: 'Monumento', rating: 5.0, img: 'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Rio de Janeiro, Brasil', title: 'Cristo Redentor', description: 'EstÃ¡tua icÃ´nica no topo do Corcovado.' },
-      { id: 5, cidade: 'Paraty', nome: 'Centro HistÃ³rico', categoria: 'Cultura', rating: 4.8, img: 'https://images.unsplash.com/photo-1628045620958-39659b9e6f1f?auto=format&fit=crop&q=80&w=400&h=400', saved: false, location: 'Paraty, Rio de Janeiro', title: 'Centro HistÃ³rico de Paraty', description: 'Arquitetura colonial preservada.' },
-      { id: 6, cidade: 'Salvador', nome: 'Pelourinho', categoria: 'Cultura', rating: 4.9, img: 'https://images.unsplash.com/photo-1510300643725-b4bc2f1262d5?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Salvador, Bahia', title: 'Pelourinho', description: 'Centro histÃ³rico vibrante de Salvador.' },
+      { id: 4, cidade: 'Rio de Janeiro', nome: 'Cristo Redentor', categoria: 'Monumento', rating: 5.0, img: 'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Rio de Janeiro, Brasil', title: 'Cristo Redentor', description: 'Estátua icônica no topo do Corcovado.' },
+      { id: 5, cidade: 'Paraty', nome: 'Centro Histórico', categoria: 'Cultura', rating: 4.8, img: 'https://images.unsplash.com/photo-1628045620958-39659b9e6f1f?auto=format&fit=crop&q=80&w=400&h=400', saved: false, location: 'Paraty, Rio de Janeiro', title: 'Centro Histórico de Paraty', description: 'Arquitetura colonial preservada.' },
+      { id: 6, cidade: 'Salvador', nome: 'Pelourinho', categoria: 'Cultura', rating: 4.9, img: 'https://images.unsplash.com/photo-1510300643725-b4bc2f1262d5?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Salvador, Bahia', title: 'Pelourinho', description: 'Centro histórico vibrante de Salvador.' },
     ],
     chatInicial: [
       { id: 1, type: 'bot', text: 'OlÃ¡, navegante! Sou o seu CapitÃ£o. Pronto para desbravar as terras brasileiras? ðŸ§­', time: 'Agora' },
