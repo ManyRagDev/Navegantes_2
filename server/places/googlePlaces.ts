@@ -1,48 +1,16 @@
 import { getNearbyCacheKey, nearbyCache } from "../cache/nearbyCache";
 import type { NearbyPlace } from "../ai/types";
+import { buildRequestBlob, inferCuratedProfile, inferRequestedGoogleTypes, normalizeCurationText, type PlacesCurationInput } from "./curation";
 import { rankNearbyPlaces } from "./ranking";
 
-type PlacesSearchInput = {
+type PlacesSearchInput = PlacesCurationInput & {
   lat?: number | null;
   lng?: number | null;
   radiusMeters?: number;
-  categories?: string[];
-  mode?: "brasil" | "mundo" | null;
-  moment?: string | null;
-  placeQuery?: string | null;
-  city?: string | null;
-};
-
-const CATEGORY_MAP: Record<string, string[]> = {
-  cafe: ["cafe"],
-  cafes: ["cafe"],
-  coffee: ["cafe"],
-  restaurante: ["restaurant"],
-  restaurantes: ["restaurant"],
-  restaurant: ["restaurant"],
-  bar: ["bar"],
-  bares: ["bar"],
-  museu: ["museum"],
-  museus: ["museum"],
-  parque: ["park"],
-  parques: ["park"],
-  praia: ["beach"],
-  praias: ["beach"],
-  hotel: ["lodging"],
-  hoteis: ["lodging"],
-  padaria: ["bakery"],
-  atracao: ["tourist_attraction"],
-  atracoes: ["tourist_attraction"],
 };
 
 const getGoogleApiKey = () =>
   process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
-
-const normalizeTypes = (categories?: string[], placeQuery?: string | null) => {
-  const allTokens = [...(categories || []), ...(placeQuery ? placeQuery.toLowerCase().split(/\s+/) : [])];
-  const types = allTokens.flatMap((token) => CATEGORY_MAP[token] || []);
-  return [...new Set(types)].slice(0, 5);
-};
 
 const haversineDistanceMeters = (lat1: number, lng1: number, lat2: number, lng2: number) => {
   const toRadians = (value: number) => (value * Math.PI) / 180;
@@ -134,22 +102,26 @@ export const searchNearbyPlaces = async (input: PlacesSearchInput): Promise<Near
     throw new Error("Latitude e longitude sao obrigatorias para nearby search");
   }
 
-  const includedTypes = normalizeTypes(input.categories, input.placeQuery);
+  const curationProfile = inferCuratedProfile(input);
+  const includedTypes = inferRequestedGoogleTypes(input);
+  const requestBlob = buildRequestBlob(input);
   const cacheKey = getNearbyCacheKey([
     "nearby",
+    curationProfile,
     input.lat.toFixed(3),
     input.lng.toFixed(3),
     input.radiusMeters || 1800,
     includedTypes.join(","),
-    input.placeQuery,
+    requestBlob,
     input.mode,
+    normalizeCurationText(input.moment || ""),
   ]);
   const cached = nearbyCache.get<NearbyPlace[]>(cacheKey);
   if (cached) return cached;
 
   const places = await fetchPlaces("https://places.googleapis.com/v1/places:searchNearby", {
     includedTypes: includedTypes.length > 0 ? includedTypes : undefined,
-    maxResultCount: 12,
+    maxResultCount: 20,
     languageCode: "pt-BR",
     locationRestriction: {
       circle: {
@@ -164,7 +136,7 @@ export const searchNearbyPlaces = async (input: PlacesSearchInput): Promise<Near
 
   const normalized = rankNearbyPlaces(
     places.map((place) => normalizePlace(place, input)),
-    { mode: input.mode, placeQuery: input.placeQuery },
+    { mode: input.mode, placeQuery: input.placeQuery, categories: input.categories, moment: input.moment, city: input.city, curationProfile },
   );
   nearbyCache.set(cacheKey, normalized, 20 * 60 * 1000);
   return normalized;
@@ -176,13 +148,24 @@ export const searchPlacesByText = async (input: PlacesSearchInput): Promise<Near
     throw new Error("Texto de busca ausente para text search");
   }
 
-  const cacheKey = getNearbyCacheKey(["text-search", query, input.lat?.toFixed(2), input.lng?.toFixed(2), input.mode]);
+  const curationProfile = inferCuratedProfile(input);
+  const requestBlob = buildRequestBlob(input);
+  const cacheKey = getNearbyCacheKey([
+    "text-search",
+    query,
+    requestBlob,
+    curationProfile,
+    input.lat?.toFixed(2),
+    input.lng?.toFixed(2),
+    input.mode,
+    normalizeCurationText(input.moment || ""),
+  ]);
   const cached = nearbyCache.get<NearbyPlace[]>(cacheKey);
   if (cached) return cached;
 
   const places = await fetchPlaces("https://places.googleapis.com/v1/places:searchText", {
     textQuery: query,
-    maxResultCount: 12,
+    maxResultCount: 20,
     languageCode: "pt-BR",
     locationBias:
       input.lat != null && input.lng != null
@@ -200,7 +183,7 @@ export const searchPlacesByText = async (input: PlacesSearchInput): Promise<Near
 
   const normalized = rankNearbyPlaces(
     places.map((place) => normalizePlace(place, input)),
-    { mode: input.mode, placeQuery: input.placeQuery || input.city || "" },
+    { mode: input.mode, placeQuery: input.placeQuery || input.city || "", categories: input.categories, moment: input.moment, city: input.city, curationProfile },
   );
   nearbyCache.set(cacheKey, normalized, 20 * 60 * 1000);
   return normalized;

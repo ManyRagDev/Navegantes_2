@@ -5,8 +5,10 @@ import { readFile } from "node:fs/promises";
 import cors from "cors";
 import dotenv from "dotenv";
 import { reverseGeocode } from "./server/geo/geocode";
-import { buildCaptainGreeting, classifyAIIntent, getNearbySuggestions, routeAIChat } from "./server/ai/router";
+import { buildCaptainGreeting, classifyAIIntent, getNearbySuggestionsDetailed, routeAIChat } from "./server/ai/router";
 import { callPollinations } from "./server/ai/providers/pollinations";
+import { pingGroq } from "./server/ai/providers/groq";
+import { pingPollinations } from "./server/ai/providers/pollinations";
 import type { AIChatRouteRequest, AIProvider, ChatMessage, NearbyPlace } from "./server/ai/types";
 import {
   addFavorite,
@@ -31,20 +33,20 @@ app.use(express.json());
 
 type AIRequest =
   | {
-      operation:
-        | "captain_chat"
-        | "captain_greeting"
-        | "city_lookup"
-        | "quick_suggestions"
-        | "dashboard_suggestions"
-        | "itinerary_suggestions";
-      input?: Record<string, unknown>;
-    }
+    operation:
+    | "captain_chat"
+    | "captain_greeting"
+    | "city_lookup"
+    | "quick_suggestions"
+    | "dashboard_suggestions"
+    | "itinerary_suggestions";
+    input?: Record<string, unknown>;
+  }
   | {
-      model?: string;
-      messages?: ChatMessage[];
-      responseMimeType?: string;
-    };
+    model?: string;
+    messages?: ChatMessage[];
+    responseMimeType?: string;
+  };
 
 type AISuccessResponse = {
   ok: true;
@@ -64,288 +66,30 @@ type AIErrorResponse = {
   details?: unknown;
 };
 
-const resolveProvider = (): AIProvider => {
-  const envProvider = (process.env.AI_PROVIDER || "pollinations").toLowerCase();
-  if (envProvider === "gemini") return "gemini";
-  if (envProvider === "groq") return "groq";
-  return "pollinations";
+// --- HELPERS / UTILITARIOS ---
+
+const asFiniteNumber = (val: any): number | null => {
+  const n = parseFloat(val);
+  return Number.isFinite(n) ? n : null;
 };
 
-const safeString = (value: unknown, fallback = "") => {
-  return typeof value === "string" ? value : fallback;
-};
-
-const asFiniteNumber = (value: unknown) => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const stripCodeFences = (value: string) => {
-  return value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-};
-
-const tryParseJson = (value: string) => {
-  try {
-    return JSON.parse(stripCodeFences(value));
-  } catch {
-    return null;
-  }
-};
-
-const mapNearbyPlaceToLegacyListItem = (place: NearbyPlace, index: number) => ({
-  id: place.placeId || index + 1,
-  title: place.name,
-  description: place.address || place.description || "Sem descricao disponivel.",
-  time: `${9 + index * 2}:00`,
-  icon: place.icon || "🧭",
-  rating: place.rating ?? undefined,
-  img: place.photoUrl || "",
-});
-
-const inferQuickSuggestionQuery = (weather: string) => {
-  const normalized = weather.toLowerCase();
-  if (/\b(chuva|chuvisco|tempestade)\b/.test(normalized)) return "cafes e museus";
-  if (/\b(sol|ensolarado|calor)\b/.test(normalized)) return "parques e atracoes ao ar livre";
-  return "lugares interessantes";
-};
-
-const callGemini = async (messages: ChatMessage[], responseType: "text" | "structured", model?: string) => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY nao configurada no servidor");
-  }
-
-  const selectedModel = model || process.env.AI_TEXT_MODEL || "gemini-3-flash-preview";
-  const contents = messages
-    .filter((message) => message.role !== "system")
-    .map((message) => ({
-      role: message.role === "assistant" ? "model" : "user",
-      parts: [{ text: message.content }],
-    }));
-
-  const systemInstruction = messages.find((message) => message.role === "system")?.content;
-
-  const body: Record<string, unknown> = {
-    contents,
-    generationConfig: responseType === "structured" ? { responseMimeType: "application/json" } : undefined,
-    systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-  };
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
-
-  const data = await response.json();
-  if (!response.ok) {
-    const errorMessage =
-      data &&
-      typeof data === "object" &&
-      "error" in data &&
-      typeof (data as any)?.error?.message === "string"
-        ? (data as any).error.message
-        : `Falha do provedor Gemini (${response.status})`;
-    throw new Error(errorMessage);
-  }
-
-  return {
-    provider: "gemini" as const,
-    model: selectedModel,
-    text: safeString((data as any)?.candidates?.[0]?.content?.parts?.[0]?.text),
-    raw: data,
-  };
-};
-
-const invokeLegacyProvider = async (messages: ChatMessage[], responseType: "text" | "structured", model?: string) => {
-  const provider = resolveProvider();
-  return provider === "gemini"
-    ? callGemini(messages, responseType, model)
-    : callPollinations(messages, responseType, model);
-};
-
-const toAIResponse = async (
-  operation:
-    | "captain_chat"
-    | "captain_greeting"
-    | "city_lookup"
-    | "quick_suggestions"
-    | "dashboard_suggestions"
-    | "itinerary_suggestions",
-  input: Record<string, unknown> = {},
-): Promise<AISuccessResponse> => {
-  if (operation === "city_lookup") {
-    const latitude = asFiniteNumber(input.latitude) ?? 0;
-    const longitude = asFiniteNumber(input.longitude) ?? 0;
-    const geo = await reverseGeocode(latitude, longitude);
-    return {
-      ok: true,
-      type: "structured",
-      provider: "groq",
-      model: "google-geocode",
-      text: geo.formattedLocation,
-      data: { city: geo.formattedLocation },
-      raw: geo,
-    };
-  }
-
-  if (operation === "captain_greeting") {
-    const text = await buildCaptainGreeting({
-      userCity: safeString(input.location, "coordenadas interessantes"),
-      mode: safeString(input.mode) === "mundo" ? "mundo" : "brasil",
-    });
-    return {
-      ok: true,
-      type: "text",
-      provider: "groq",
-      model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
-      text,
-      data: null,
-    };
-  }
-
-  if (operation === "captain_chat") {
-    const routed = await routeAIChat(safeString(input.userText), {
-      mode: safeString(input.mode) === "o Mundo" || safeString(input.mode) === "mundo" ? "mundo" : "brasil",
-      userCity: safeString(input.userCity) || null,
-      lat: asFiniteNumber(input.latitude),
-      lng: asFiniteNumber(input.longitude),
-      selectedPlaceName: safeString(input.selectedPlaceName) || null,
-      selectedPlaceAddress: safeString(input.selectedPlaceAddress) || null,
-    });
-    return {
-      ok: true,
-      type: routed.data?.items ? "structured" : "text",
-      provider: routed.executor.includes("pollinations") ? "pollinations" : "groq",
-      model: routed.executor.includes("pollinations")
-        ? process.env.AI_TEXT_MODEL || "openai"
-        : process.env.GROQ_MODEL || "openai/gpt-oss-20b",
-      text: routed.text,
-      data: routed.data,
-      raw: routed.trace,
-    };
-  }
-
-  if (operation === "quick_suggestions" || operation === "dashboard_suggestions") {
-    const items = await getNearbySuggestions({
-      lat: asFiniteNumber(input.latitude),
-      lng: asFiniteNumber(input.longitude),
-      city: safeString(input.city) || null,
-      mode: safeString(input.mode) === "mundo" ? "mundo" : "brasil",
-      placeQuery:
-        operation === "quick_suggestions"
-          ? inferQuickSuggestionQuery(safeString(input.weather))
-          : safeString(input.placeQuery) || "lugares para visitar",
-      radiusMeters: operation === "quick_suggestions" ? 1800 : 5000,
-    });
-
-    const normalizedItems = items
-      .slice(0, operation === "quick_suggestions" ? 3 : 10)
-      .map((item, index) => mapNearbyPlaceToLegacyListItem(item, index));
-
-    return {
-      ok: true,
-      type: "structured",
-      provider: "groq",
-      model: "google-places",
-      text: JSON.stringify(normalizedItems),
-      data: { items: normalizedItems },
-      raw: { source: "google_places" },
-    };
-  }
-
-  if (operation === "itinerary_suggestions") {
-    const items = await getNearbySuggestions({
-      city: safeString(input.destination) || null,
-      placeQuery: "pontos turisticos imperdiveis",
-      mode: safeString(input.mode) === "mundo" ? "mundo" : "brasil",
-    });
-    const normalizedItems = items.slice(0, 5).map((item, index) => ({
-      id: index + 1,
-      title: item.name,
-      description: item.address || item.description,
-      time: `${9 + index * 2}:00`,
-    }));
-    return {
-      ok: true,
-      type: "structured",
-      provider: "groq",
-      model: "google-places",
-      text: JSON.stringify(normalizedItems),
-      data: { items: normalizedItems },
-      raw: { source: "google_places" },
-    };
-  }
-
-  return {
-    ok: true,
-    type: "structured",
-    provider: "groq",
-    model: "fallback",
-    text: "[]",
-    data: { items: [] },
-  };
+const safeString = (val: any, fallback = ""): string => {
+  if (typeof val === "string") return val;
+  if (val == null) return fallback;
+  return String(val);
 };
 
 const sendAIError = (res: express.Response, error: unknown, operation?: string) => {
   const message = error instanceof Error ? error.message : "Erro ao comunicar com a IA";
-  console.error("[ai]", { operation, provider: resolveProvider(), error: message });
-  const body: AIErrorResponse = {
+  console.error("[ai:error]", { operation, error: message });
+  res.status(500).json({
     ok: false,
     error: message,
-    provider: resolveProvider(),
-  };
-  res.status(500).json(body);
+    operation
+  });
 };
 
-app.post("/api/ai", async (req, res) => {
-  const body = req.body as AIRequest;
-
-  try {
-    if ("operation" in body && body.operation) {
-      const result = await toAIResponse(body.operation, body.input);
-      console.log("[ai]", {
-        operation: body.operation,
-        provider: result.provider,
-        model: result.model,
-        type: result.type,
-      });
-      return res.json(result);
-    }
-
-    const legacyBody = body as Extract<AIRequest, { model?: string }>;
-    const messages = Array.isArray(legacyBody.messages) ? legacyBody.messages : [];
-    const responseType = legacyBody.responseMimeType === "application/json" ? "structured" : "text";
-    const providerResult = await invokeLegacyProvider(messages, responseType, legacyBody.model);
-
-    const result: AISuccessResponse = {
-      ok: true,
-      type: responseType,
-      provider: providerResult.provider,
-      model: providerResult.model,
-      text: providerResult.text,
-      data: responseType === "structured" ? tryParseJson(providerResult.text) : null,
-      raw: providerResult.raw,
-    };
-
-    console.log("[ai]", {
-      operation: "legacy_client",
-      provider: result.provider,
-      model: result.model,
-      type: result.type,
-    });
-    return res.json(result);
-  } catch (error) {
-    return sendAIError(res, error, "operation" in body ? body.operation : "legacy_client");
-  }
-});
+// --- ROTAS DE IA (HÍBRIDA) ---
 
 app.post("/api/ai/route", async (req, res) => {
   try {
@@ -381,7 +125,7 @@ app.post("/api/ai/chat", async (req, res) => {
 
 app.post("/api/places/nearby", async (req, res) => {
   try {
-    const { lat, lng, radiusMeters, categories, mode, moment, placeQuery, city } = req.body as {
+    const { lat, lng, radiusMeters, categories, mode, moment, placeQuery, city, surface, requestedCount, safetyProfile } = req.body as {
       lat?: number;
       lng?: number;
       radiusMeters?: number;
@@ -390,9 +134,12 @@ app.post("/api/places/nearby", async (req, res) => {
       moment?: string;
       placeQuery?: string;
       city?: string;
+      surface?: "home" | "chat" | "itinerary" | "story";
+      requestedCount?: number;
+      safetyProfile?: "equilibrado" | "priorizar_seguranca";
     };
 
-    const items = await getNearbySuggestions({
+    const result = await getNearbySuggestionsDetailed({
       lat,
       lng,
       radiusMeters,
@@ -401,12 +148,34 @@ app.post("/api/places/nearby", async (req, res) => {
       moment,
       placeQuery,
       city,
+      surface,
+      requestedCount,
+      safetyProfile,
+    });
+
+    console.log("[api/places/nearby][response]", {
+      surface: surface || "auto",
+      requestedCount: requestedCount || null,
+      itemsLength: result.items.length,
+      firstItem: result.items[0]
+        ? {
+            placeId: result.items[0].placeId,
+            curationSource: result.items[0].curationSource || null,
+            urbanRole: result.items[0].urbanRole || null,
+          }
+        : null,
+      debugVersion: result.debug.debugVersion,
+      debugPipeline: result.debug.debugPipeline,
+      debug: result.debug,
     });
 
     return res.json({
       ok: true,
       source: "google_places",
-      items,
+      items: result.items,
+      debugVersion: result.debug.debugVersion,
+      debugPipeline: result.debug.debugPipeline,
+      debug: result.debug,
     });
   } catch (error) {
     res.status(500).json({
@@ -438,46 +207,7 @@ app.get("/api/geo/reverse-geocode", async (req, res) => {
   }
 });
 
-app.post("/api/gemini", async (req, res) => {
-  const { model, contents, config } = req.body as {
-    model?: string;
-    contents?: Array<{ parts?: Array<{ text?: string }> }>;
-    config?: { systemInstruction?: string | { parts?: Array<{ text?: string }> }; responseMimeType?: string };
-  };
-
-  try {
-    const messages: ChatMessage[] = [];
-    const systemText =
-      typeof config?.systemInstruction === "string"
-        ? config.systemInstruction
-        : safeString(config?.systemInstruction?.parts?.[0]?.text);
-
-    if (systemText) {
-      messages.push({ role: "system", content: systemText });
-    }
-
-    for (const entry of contents || []) {
-      const text = safeString(entry?.parts?.[0]?.text);
-      if (text) {
-        messages.push({ role: "user", content: text });
-      }
-    }
-
-    const responseType = config?.responseMimeType === "application/json" ? "structured" : "text";
-    const providerResult = await invokeLegacyProvider(messages, responseType, model);
-
-    return res.json({
-      ok: true,
-      text: providerResult.text,
-      data: responseType === "structured" ? tryParseJson(providerResult.text) : null,
-      provider: providerResult.provider,
-      model: providerResult.model,
-      raw: providerResult.raw,
-    });
-  } catch (error) {
-    return sendAIError(res, error, "legacy_gemini_route");
-  }
-});
+// --- ROTAS LEGADAS / DADOS ---
 
 app.get("/api/health/db", async (req, res) => {
   try {
@@ -487,6 +217,25 @@ app.get("/api/health/db", async (req, res) => {
     console.error("[health/db] Erro:", error);
     res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
   }
+});
+
+app.get("/api/health/ai", async (req, res) => {
+  const timestamp = new Date().toISOString();
+  const [groq, pollinations] = await Promise.all([
+    pingGroq().catch((e) => ({ ok: false as const, provider: "groq" as const, error: e.message, latencyMs: 0 })),
+    pingPollinations().catch((e) => ({ ok: false as const, provider: "pollinations" as const, error: e.message, latencyMs: 0 })),
+  ]);
+  const googlePlacesKey = Boolean(
+    process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY,
+  );
+  const allOk = groq.ok && pollinations.ok && googlePlacesKey;
+  res.json({
+    ok: allOk,
+    timestamp,
+    providers: { groq, pollinations, google_places: { ok: googlePlacesKey, provider: "google_places" } },
+    activeProvider: process.env.AI_PROVIDER || "pollinations",
+    groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
+  });
 });
 
 app.get("/api/profile", async (req, res) => {
@@ -581,7 +330,7 @@ app.delete("/api/favorites/:localId", async (req, res) => {
     await removeFavorite(parseInt(localId, 10));
     res.json({ status: "ok" });
   } catch (error) {
-    console.error("[favorites:delete:v2] Erro:", error);
+    console.error("[favorites:delete:v2] Erve:v2 error:", error);
     res.status(500).json({ error: "Erro ao remover favorito" });
   }
 });

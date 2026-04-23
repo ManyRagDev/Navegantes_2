@@ -2,6 +2,38 @@ import type { ChatMessage } from "../types";
 
 const safeString = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
 
+/** Lightweight health-check: sends a minimal request to confirm Pollinations connectivity. */
+export const pingPollinations = async () => {
+  const start = Date.now();
+  const hasKey = Boolean(process.env.POLLINATIONS_API_KEY);
+  if (!hasKey) {
+    return { ok: false as const, provider: "pollinations" as const, error: "POLLINATIONS_API_KEY ausente", latencyMs: 0 };
+  }
+  try {
+    const selectedModel = process.env.AI_TEXT_MODEL || "openai";
+    const response = await fetch("https://gen.pollinations.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.POLLINATIONS_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: [{ role: "user", content: "ping" }],
+        seed: -1,
+      }),
+    });
+    const latencyMs = Date.now() - start;
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      return { ok: false as const, provider: "pollinations" as const, error: safeString((data as any)?.error, `HTTP ${response.status}`), latencyMs };
+    }
+    return { ok: true as const, provider: "pollinations" as const, model: selectedModel, latencyMs };
+  } catch (error) {
+    return { ok: false as const, provider: "pollinations" as const, error: error instanceof Error ? error.message : String(error), latencyMs: Date.now() - start };
+  }
+};
+
 export const callPollinations = async (
   messages: ChatMessage[],
   responseType: "text" | "structured",

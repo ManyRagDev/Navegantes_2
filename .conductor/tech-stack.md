@@ -17,8 +17,12 @@
 - **Schema**: Custom schema `navegantes` no Postgres
 
 # Integrations
-- **AI**: Gemini Pro (via Proxy seguro no backend)
-- **Maps**: Google Maps API
+- **AI (Classificação + Respostas Rápidas)**: Groq (via `server/ai/providers/groq.ts`)
+- **AI (Respostas Profundas)**: Pollinations (via `server/ai/providers/pollinations.ts`)
+- **AI (Fallback/Legacy)**: Gemini Pro (via Proxy seguro no backend)
+- **Places**: Google Places API (via `server/places/googlePlaces.ts` — busca factual server-side)
+- **Geocoding**: Google Geocoding API (via `server/geo/geocode.ts` — reverse geocode server-side)
+- **Maps (Frontend)**: Google Maps API (@react-google-maps/api)
 - **Client Helpers**: [api.ts](file:///c:/Users/emanu/Documents/Projetos/Navegantes/src/api.ts) para rotas dinâmicas (Android/Web)
 
 # Infrastructure (Planned)

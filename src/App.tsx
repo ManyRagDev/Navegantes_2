@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { Compass, Map as MapIcon, Search, Navigation, Clock, Star, Heart, Bookmark, Camera, MapPin, ChevronLeft, Send, MessageSquare, Sun, Edit3, Download, Plus, Award, X, Sparkles, Users, UserCircle, ThumbsUp, Share2, Save, MapPinned, ArrowRight, CheckCircle2, Mail, AlertTriangle, RefreshCw, Anchor, WifiOff, ShoppingBag, Lock } from 'lucide-react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow, DirectionsRenderer } from '@react-google-maps/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiUrl } from './api';
+import { SafetyPreferenceToggle, type SafetyPreference } from './components/SafetyPreferenceToggle';
 
 // --- TIPOS ---
 
@@ -87,6 +88,12 @@ interface NearbyPlace {
   description: string;
   latitude: number;
   longitude: number;
+  curationReason?: string;
+  curationSource?: 'heuristic' | 'groq_editorial' | 'heuristic_fallback';
+  editorialScore?: number | null;
+  urbanRole?: 'destination' | 'landmark' | 'cultural_reference' | 'local_gem' | 'functional_service' | 'transit_only';
+  destinationValue?: 'high' | 'medium' | 'low';
+  worthDetour?: 'high' | 'medium' | 'low';
 }
 
 interface AIChatRouteResponse {
@@ -98,11 +105,16 @@ interface AIChatRouteResponse {
   data: {
     items?: NearbyPlace[];
     city?: string | null;
+    requestedCount?: number | null;
+    safetyProfile?: 'equilibrado' | 'priorizar_seguranca';
   } | null;
+  debugVersion?: string;
+  debugPipeline?: string;
+  debug?: Record<string, unknown>;
   error?: string;
 }
 
-// --- CONFIGURAÇÃO E DADOS ---
+// --- CONFIGURAÃ‡ÃƒO E DADOS ---
 
 const COLORS = {
   bg: '#f3ecdb',      // Fundo papel creme
@@ -113,27 +125,27 @@ const COLORS = {
   border: '#5a3c28',  // Bordas escuras
 };
 
-// Dados completos e dinâmicos (Mundo vs Brasil)
+// Dados completos e dinÃ¢micos (Mundo vs Brasil)
 const DADOS_MODO = {
   mundo: {
     tituloHeader: "O Globo",
     roteiro: {
       data: '27 Fev 2026',
       cidade: 'Explorando o Mundo',
-      clima: '--°C',
-      paradaAtual: { id: 0, hora: '--:--', titulo: 'Início da Jornada', categoria: 'Aventura', descricao: 'Abra o mapa para definir seu próximo destino.', icon: Compass, status: 'atual' },
+      clima: '--Â°C',
+      paradaAtual: { id: 0, hora: '--:--', titulo: 'InÃ­cio da Jornada', categoria: 'Aventura', descricao: 'Abra o mapa para definir seu prÃ³ximo destino.', icon: Compass, status: 'atual' },
     },
     locaisExplorar: [
-      { id: 1, cidade: 'Paris', nome: 'Shakespeare & Co', categoria: 'Livraria', rating: 4.9, img: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Paris, França', title: 'Shakespeare & Co', description: 'Livraria histórica em Paris.' },
-      { id: 2, cidade: 'Paris', nome: 'Sainte-Chapelle', categoria: 'Monumento', rating: 4.8, img: 'https://images.unsplash.com/photo-1543339174-8db91b9201a0?auto=format&fit=crop&q=80&w=400&h=400', saved: false, location: 'Paris, França', title: 'Sainte-Chapelle', description: 'Capela gótica famosa pelos vitrais.' },
-      { id: 3, cidade: 'Roma', nome: 'Coliseu', categoria: 'Monumento', rating: 5.0, img: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Roma, Itália', title: 'Coliseu', description: 'O maior anfiteatro já construído.' },
+      { id: 1, cidade: 'Paris', nome: 'Shakespeare & Co', categoria: 'Livraria', rating: 4.9, img: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Paris, FranÃ§a', title: 'Shakespeare & Co', description: 'Livraria histÃ³rica em Paris.' },
+      { id: 2, cidade: 'Paris', nome: 'Sainte-Chapelle', categoria: 'Monumento', rating: 4.8, img: 'https://images.unsplash.com/photo-1543339174-8db91b9201a0?auto=format&fit=crop&q=80&w=400&h=400', saved: false, location: 'Paris, FranÃ§a', title: 'Sainte-Chapelle', description: 'Capela gÃ³tica famosa pelos vitrais.' },
+      { id: 3, cidade: 'Roma', nome: 'Coliseu', categoria: 'Monumento', rating: 5.0, img: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Roma, ItÃ¡lia', title: 'Coliseu', description: 'O maior anfiteatro jÃ¡ construÃ­do.' },
     ],
     chatInicial: [
-      { id: 1, type: 'bot', text: 'Saudações, navegante! Sou o seu Capitão. Para onde os ventos da curiosidade nos levarão hoje? 🧭', time: 'Agora' },
+      { id: 1, type: 'bot', text: 'SaudaÃ§Ãµes, navegante! Sou o seu CapitÃ£o. Para onde os ventos da curiosidade nos levarÃ£o hoje? ðŸ§­', time: 'Agora' },
     ],
     postsComunidade: [
-      { id: 1, user: 'Marina Silva', avatar: 'https://i.pravatar.cc/100?img=1', local: 'Montmartre, Paris', tempo: '2h atrás', texto: 'Finalmente encontrei a Maison Rose! A luz da tarde aqui é surreal. Dica: cheguem antes das 16h.', img: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&q=80&w=600&h=400', likes: 42, comments: 5 },
-      { id: 2, user: 'João Pedro', avatar: 'https://i.pravatar.cc/100?img=11', local: 'Trastevere, Roma', tempo: '5h atrás', texto: 'A melhor pasta carbonara da minha vida. Me perdi de propósito nestas ruas e valeu a pena.', img: 'https://images.unsplash.com/photo-1516483638261-f40af5baacce?auto=format&fit=crop&q=80&w=600&h=400', likes: 128, comments: 12 }
+      { id: 1, user: 'Marina Silva', avatar: 'https://i.pravatar.cc/100?img=1', local: 'Montmartre, Paris', tempo: '2h atrÃ¡s', texto: 'Finalmente encontrei a Maison Rose! A luz da tarde aqui Ã© surreal. Dica: cheguem antes das 16h.', img: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&q=80&w=600&h=400', likes: 42, comments: 5 },
+      { id: 2, user: 'JoÃ£o Pedro', avatar: 'https://i.pravatar.cc/100?img=11', local: 'Trastevere, Roma', tempo: '5h atrÃ¡s', texto: 'A melhor pasta carbonara da minha vida. Me perdi de propÃ³sito nestas ruas e valeu a pena.', img: 'https://images.unsplash.com/photo-1516483638261-f40af5baacce?auto=format&fit=crop&q=80&w=600&h=400', likes: 128, comments: 12 }
     ]
   },
   brasil: {
@@ -141,27 +153,27 @@ const DADOS_MODO = {
     roteiro: {
       data: '27 Fev 2026',
       cidade: 'Explorando o Brasil',
-      clima: '--°C',
-      paradaAtual: { id: 0, hora: '--:--', titulo: 'Início da Jornada', categoria: 'Aventura', descricao: 'Abra o mapa para descobrir tesouros nacionais.', icon: Compass, status: 'atual' },
+      clima: '--Â°C',
+      paradaAtual: { id: 0, hora: '--:--', titulo: 'InÃ­cio da Jornada', categoria: 'Aventura', descricao: 'Abra o mapa para descobrir tesouros nacionais.', icon: Compass, status: 'atual' },
     },
     locaisExplorar: [
-      { id: 4, cidade: 'Rio de Janeiro', nome: 'Cristo Redentor', categoria: 'Monumento', rating: 5.0, img: 'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Rio de Janeiro, Brasil', title: 'Cristo Redentor', description: 'Estátua icônica no topo do Corcovado.' },
-      { id: 5, cidade: 'Paraty', nome: 'Centro Histórico', categoria: 'Cultura', rating: 4.8, img: 'https://images.unsplash.com/photo-1628045620958-39659b9e6f1f?auto=format&fit=crop&q=80&w=400&h=400', saved: false, location: 'Paraty, Rio de Janeiro', title: 'Centro Histórico de Paraty', description: 'Arquitetura colonial preservada.' },
-      { id: 6, cidade: 'Salvador', nome: 'Pelourinho', categoria: 'Cultura', rating: 4.9, img: 'https://images.unsplash.com/photo-1510300643725-b4bc2f1262d5?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Salvador, Bahia', title: 'Pelourinho', description: 'Centro histórico vibrante de Salvador.' },
+      { id: 4, cidade: 'Rio de Janeiro', nome: 'Cristo Redentor', categoria: 'Monumento', rating: 5.0, img: 'https://images.unsplash.com/photo-1483729558449-99ef09a8c325?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Rio de Janeiro, Brasil', title: 'Cristo Redentor', description: 'EstÃ¡tua icÃ´nica no topo do Corcovado.' },
+      { id: 5, cidade: 'Paraty', nome: 'Centro HistÃ³rico', categoria: 'Cultura', rating: 4.8, img: 'https://images.unsplash.com/photo-1628045620958-39659b9e6f1f?auto=format&fit=crop&q=80&w=400&h=400', saved: false, location: 'Paraty, Rio de Janeiro', title: 'Centro HistÃ³rico de Paraty', description: 'Arquitetura colonial preservada.' },
+      { id: 6, cidade: 'Salvador', nome: 'Pelourinho', categoria: 'Cultura', rating: 4.9, img: 'https://images.unsplash.com/photo-1510300643725-b4bc2f1262d5?auto=format&fit=crop&q=80&w=400&h=400', saved: true, location: 'Salvador, Bahia', title: 'Pelourinho', description: 'Centro histÃ³rico vibrante de Salvador.' },
     ],
     chatInicial: [
-      { id: 1, type: 'bot', text: 'Olá, navegante! Sou o seu Capitão. Pronto para desbravar as terras brasileiras? 🧭', time: 'Agora' },
+      { id: 1, type: 'bot', text: 'OlÃ¡, navegante! Sou o seu CapitÃ£o. Pronto para desbravar as terras brasileiras? ðŸ§­', time: 'Agora' },
     ],
     postsComunidade: [
-      { id: 3, user: 'Tiago Mendes', avatar: 'https://i.pravatar.cc/100?img=33', local: 'Pelourinho, Salvador', tempo: '1h atrás', texto: 'O acarajé da Dinha é realmente tudo o que dizem. Que energia incrível tem esta praça!', img: 'https://images.unsplash.com/photo-1510300643725-b4bc2f1262d5?auto=format&fit=crop&q=80&w=600&h=400', likes: 89, comments: 8 },
-      { id: 4, user: 'Ana Costa', avatar: 'https://i.pravatar.cc/100?img=5', local: 'Paraty, Rio', tempo: '4h atrás', texto: 'Passeio de escuna pelas ilhas. A água estava perfeita e o clima também. Não deixem de provar a Gabriela!', img: 'https://images.unsplash.com/photo-1628045620958-39659b9e6f1f?auto=format&fit=crop&q=80&w=600&h=400', likes: 210, comments: 24 }
+      { id: 3, user: 'Tiago Mendes', avatar: 'https://i.pravatar.cc/100?img=33', local: 'Pelourinho, Salvador', tempo: '1h atrÃ¡s', texto: 'O acarajÃ© da Dinha Ã© realmente tudo o que dizem. Que energia incrÃ­vel tem esta praÃ§a!', img: 'https://images.unsplash.com/photo-1510300643725-b4bc2f1262d5?auto=format&fit=crop&q=80&w=600&h=400', likes: 89, comments: 8 },
+      { id: 4, user: 'Ana Costa', avatar: 'https://i.pravatar.cc/100?img=5', local: 'Paraty, Rio', tempo: '4h atrÃ¡s', texto: 'Passeio de escuna pelas ilhas. A Ã¡gua estava perfeita e o clima tambÃ©m. NÃ£o deixem de provar a Gabriela!', img: 'https://images.unsplash.com/photo-1628045620958-39659b9e6f1f?auto=format&fit=crop&q=80&w=600&h=400', likes: 210, comments: 24 }
     ]
   }
 };
 
 const LOCAIS = [...DADOS_MODO.mundo.locaisExplorar, ...DADOS_MODO.brasil.locaisExplorar];
 
-const CATEGORIAS = ['Tudo', 'Cafés', 'Restaurantes', 'Museus', 'Atrações', 'Hotéis'];
+const CATEGORIAS = ['Tudo', 'CafÃ©s', 'Restaurantes', 'Museus', 'AtraÃ§Ãµes', 'HotÃ©is'];
 
 // --- COMPONENTES VISUAIS PREMIUM (SVGs Customizados) ---
 
@@ -236,116 +248,35 @@ const formatMessage = (text: string) => {
   });
 };
 
-// --- APLICAÇÃO PRINCIPAL ---
+const SAFETY_PREFERENCE_STORAGE_KEY = 'navegantes_safety_preference';
+
+const SAFETY_PREFERENCE_META: Record<SafetyPreference, {
+  label: string;
+  curationProfile: 'balanced' | 'home_curated';
+  description: string;
+}> = {
+  balanced: {
+    label: 'Equilibrado',
+    curationProfile: 'balanced',
+    description: 'curadoria ampla com filtros basicos',
+  },
+  safer: {
+    label: 'Priorizar seguranÃ§a',
+    curationProfile: 'home_curated',
+    description: 'curadoria mais rigorosa para descoberta local',
+  },
+};
+
+const readStoredSafetyPreference = (): SafetyPreference => {
+  if (typeof window === 'undefined') return 'balanced';
+
+  const stored = window.localStorage.getItem(SAFETY_PREFERENCE_STORAGE_KEY);
+  return stored === 'safer' ? 'safer' : 'balanced';
+};
+
 
 // --- CONSTANTES E ESTILOS ---
 
-const inferLegacyOperation = (prompt: string) => {
-  if (prompt.includes("Latitude:") && prompt.includes("Longitude:")) return 'city_lookup';
-  if (prompt.includes('Dê as boas-vindas como "O Capitão"')) return 'captain_greeting';
-  if (prompt.includes('Sugira 5 pontos turísticos imperdíveis em')) return 'itinerary_suggestions';
-  if (prompt.includes('Baseado no clima de')) return 'quick_suggestions';
-  if (prompt.includes('Sugira os 10 melhores locais para visitar agora')) return 'dashboard_suggestions';
-  return 'captain_chat';
-};
-
-const inferLegacyInput = (prompt: string, config?: any) => {
-  const operation = inferLegacyOperation(prompt);
-
-  if (operation === 'city_lookup') {
-    const latitudeMatch = prompt.match(/Latitude:\s*([^,]+),/i);
-    const longitudeMatch = prompt.match(/Longitude:\s*([^.\n]+)/i);
-    return {
-      operation,
-      input: {
-        latitude: latitudeMatch?.[1]?.trim() || '',
-        longitude: longitudeMatch?.[1]?.trim() || ''
-      }
-    };
-  }
-
-  if (operation === 'captain_greeting') {
-    const locationMatch = prompt.match(/Ele está em (.+?)\./i);
-    return {
-      operation,
-      input: {
-        location: locationMatch?.[1]?.trim() || 'coordenadas interessantes'
-      }
-    };
-  }
-
-  if (operation === 'itinerary_suggestions') {
-    const destinationMatch = prompt.match(/imperdíveis em (.+?)\./i);
-    return {
-      operation,
-      input: {
-        destination: destinationMatch?.[1]?.trim() || ''
-      }
-    };
-  }
-
-  if (operation === 'quick_suggestions') {
-    const cityMatch = prompt.match(/Estou em (.+?)\. Baseado/i);
-    const weatherMatch = prompt.match(/clima de (.+?), sugira/i);
-    return {
-      operation,
-      input: {
-        city: cityMatch?.[1]?.trim() || '',
-        weather: weatherMatch?.[1]?.trim() || ''
-      }
-    };
-  }
-
-  if (operation === 'dashboard_suggestions') {
-    const cityMatch = prompt.match(/Estou em (.+?)\. Sugira/i);
-    return {
-      operation,
-      input: {
-        city: cityMatch?.[1]?.trim() || ''
-      }
-    };
-  }
-
-  return {
-    operation,
-    input: {
-      userText: prompt,
-      mode:
-        (typeof config?.systemInstruction === 'string' && config.systemInstruction.includes('explorar o Brasil')) || prompt.includes('explorar o Brasil')
-          ? 'o Brasil'
-          : (typeof config?.systemInstruction === 'string' && config.systemInstruction.includes('explorar o Mundo')) || prompt.includes('explorar o Mundo')
-            ? 'o Mundo'
-            : undefined,
-      systemInstruction: config?.systemInstruction
-    }
-  };
-};
-
-// Função auxiliar para chamar o proxy Pollinations AI (protege a API Key)
-const callAI = async <TData = unknown>(operationOrModel: string, inputOrPrompt?: Record<string, unknown> | string, config?: any) => {
-  const isLegacyPromptCall = typeof inputOrPrompt === 'string';
-  const payload = isLegacyPromptCall
-    ? inferLegacyInput(inputOrPrompt, config)
-    : { operation: operationOrModel, input: inputOrPrompt };
-
-  const response = await fetch(apiUrl("/api/ai"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const data: AIResponse<TData> = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao comunicar com a IA");
-
-  if (isLegacyPromptCall && data.type === 'structured') {
-    const structuredData = data.data as { items?: AISuggestion[]; city?: string } | null;
-    const legacyText = structuredData?.city
-      ? structuredData.city
-      : JSON.stringify(structuredData?.items || []);
-    return { ...data, text: legacyText } as AIResponse<TData>;
-  }
-
-  return data;
-};
 
 const callCaptainChat = async (message: string, context?: Record<string, unknown>) => {
   const response = await fetch(apiUrl("/api/ai/chat"), {
@@ -354,7 +285,19 @@ const callCaptainChat = async (message: string, context?: Record<string, unknown
     body: JSON.stringify({ message, context })
   });
   const data: AIChatRouteResponse = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao conversar com o Capitão");
+  console.log("[Navegantes][API][/api/ai/chat] payload bruto", {
+    request: { message, context },
+    response: data,
+  });
+  console.log("[Navegantes][API][/api/ai/chat] resumo", {
+    debugVersion: data.debugVersion || null,
+    debugPipeline: data.debugPipeline || null,
+    itemsLength: data.data?.items?.length || 0,
+    firstItemCurationSource: data.data?.items?.[0]?.curationSource || null,
+    firstItemCurationReason: data.data?.items?.[0]?.curationReason || null,
+    firstItemUrbanRole: data.data?.items?.[0]?.urbanRole || null,
+  });
+  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao conversar com o CapitÃ£o");
   return data;
 };
 
@@ -365,8 +308,35 @@ const callNearbyPlaces = async (payload: Record<string, unknown>) => {
     body: JSON.stringify(payload)
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao buscar lugares próximos");
-  return data as { ok: true; items: NearbyPlace[]; source: string };
+  console.log("[Navegantes][API][/api/places/nearby] payload bruto", {
+    request: payload,
+    response: data,
+  });
+  console.log("[Navegantes][API][/api/places/nearby] resumo", {
+    requestSurface: typeof payload.surface === 'string' ? payload.surface : null,
+    requestCity: typeof payload.city === 'string' ? payload.city : null,
+    requestLat: typeof payload.lat === 'number' ? payload.lat : null,
+    requestLng: typeof payload.lng === 'number' ? payload.lng : null,
+    requestPlaceQuery: typeof payload.placeQuery === 'string' ? payload.placeQuery : null,
+    debugVersion: data?.debugVersion || null,
+    debugPipeline: data?.debugPipeline || null,
+    debug: data?.debug || null,
+    itemsLength: Array.isArray(data?.items) ? data.items.length : 0,
+    firstItemCurationSource: Array.isArray(data?.items) ? data.items[0]?.curationSource || null : null,
+    firstItemCurationReason: Array.isArray(data?.items) ? data.items[0]?.curationReason || null : null,
+    firstItemUrbanRole: Array.isArray(data?.items) ? data.items[0]?.urbanRole || null : null,
+    firstItemDestinationValue: Array.isArray(data?.items) ? data.items[0]?.destinationValue || null : null,
+    firstItemWorthDetour: Array.isArray(data?.items) ? data.items[0]?.worthDetour || null : null,
+  });
+  if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao buscar lugares prÃ³ximos");
+  return data as {
+    ok: true;
+    items: NearbyPlace[];
+    source: string;
+    debugVersion?: string;
+    debugPipeline?: string;
+    debug?: Record<string, unknown>;
+  };
 };
 
 const callReverseGeocode = async (lat: number, lng: number) => {
@@ -374,6 +344,42 @@ const callReverseGeocode = async (lat: number, lng: number) => {
   const data = await response.json();
   if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao identificar cidade");
   return data as { ok: true; city: string; data: { formattedLocation: string } };
+};
+
+const logCurationSuggestions = (label: string, items: NearbyPlace[] = []) => {
+  if (typeof window === 'undefined') return;
+
+  console.log(`[Navegantes][Curadoria] ${label}`, items.map((item, index) => ({
+    posicao: index + 1,
+    nome: item.name,
+    motivo: item.curationReason || '(sem motivo editorial)',
+    papel: item.urbanRole || '(nao informado)',
+    destino: item.destinationValue || '(nao informado)',
+    desvio: item.worthDetour || '(nao informado)',
+    score: item.editorialScore ?? '(nao informado)',
+    fonte: item.curationSource || '(nao informado)',
+  })));
+  console.group(`[Navegantes][Curadoria][Detalhe] ${label}`);
+  if (items.length === 0) {
+    console.log('Nenhuma sugestao retornada.');
+    console.groupEnd();
+    return;
+  }
+
+  console.table(items.map((item, index) => ({
+    posicao: index + 1,
+    nome: item.name,
+    motivo: item.curationReason || '(sem motivo editorial)',
+    papel: item.urbanRole || '(nao informado)',
+    destino: item.destinationValue || '(nao informado)',
+    desvio: item.worthDetour || '(nao informado)',
+    score: item.editorialScore ?? '(nao informado)',
+    fonte: item.curationSource || '(nao informado)',
+    rating: item.rating ?? '(sem nota)',
+    reviews: item.userRatingsTotal ?? 0,
+  })));
+  console.log('Sugestoes completas:', items);
+  console.groupEnd();
 };
 
 const MAP_STYLES = [
@@ -434,7 +440,7 @@ const MAP_OPTIONS = {
   disableDefaultUI: true,
   zoomControl: false,
   gestureHandling: 'greedy',
-  clickableIcons: false, // Desativa cliques em ícones padrão do Google
+  clickableIcons: false, // Desativa cliques em Ã­cones padrÃ£o do Google
   mapTypeControl: false,
   streetViewControl: false,
   fullscreenControl: false,
@@ -442,14 +448,14 @@ const MAP_OPTIONS = {
 
 const LOCATIONS = {
   mundo: [
-    { id: 'paris', name: 'Paris', lat: 48.8566, lng: 2.3522, description: 'A cidade luz e seus cafés históricos.' },
-    { id: 'roma', name: 'Roma', lat: 41.9028, lng: 12.4964, description: 'Onde cada pedra conta uma história milenar.' },
-    { id: 'kyoto', name: 'Kyoto', lat: 35.0116, lng: 135.7681, description: 'Templos serenos e jardins de contemplação.' }
+    { id: 'paris', name: 'Paris', lat: 48.8566, lng: 2.3522, description: 'A cidade luz e seus cafÃ©s histÃ³ricos.' },
+    { id: 'roma', name: 'Roma', lat: 41.9028, lng: 12.4964, description: 'Onde cada pedra conta uma histÃ³ria milenar.' },
+    { id: 'kyoto', name: 'Kyoto', lat: 35.0116, lng: 135.7681, description: 'Templos serenos e jardins de contemplaÃ§Ã£o.' }
   ],
   brasil: [
-    { id: 'salvador', name: 'Salvador', lat: -12.9714, lng: -38.5014, description: 'Cores, sabores e o axé da primeira capital.' },
+    { id: 'salvador', name: 'Salvador', lat: -12.9714, lng: -38.5014, description: 'Cores, sabores e o axÃ© da primeira capital.' },
     { id: 'rio', name: 'Rio de Janeiro', lat: -22.9068, lng: -43.1729, description: 'Entre o mar e a montanha, a cidade maravilhosa.' },
-    { id: 'paraty', name: 'Paraty', lat: -23.2178, lng: -44.7131, description: 'Casarões coloniais e águas cristalinas.' }
+    { id: 'paraty', name: 'Paraty', lat: -23.2178, lng: -44.7131, description: 'CasarÃµes coloniais e Ã¡guas cristalinas.' }
   ]
 };
 
@@ -459,9 +465,9 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Captura erros de autenticação do Google Maps (chave inválida, billing, etc)
+    // Captura erros de autenticaÃ§Ã£o do Google Maps (chave invÃ¡lida, billing, etc)
     window.gm_authFailure = () => {
-      setAuthError("Falha na Autenticação: Verifique sua Chave de API e o Faturamento no Google Cloud Console.");
+      setAuthError("Falha na AutenticaÃ§Ã£o: Verifique sua Chave de API e o Faturamento no Google Cloud Console.");
       console.error("Google Maps Auth Failure");
     };
   }, []);
@@ -506,7 +512,7 @@ export default function App() {
     libraries: LIBRARIES as any,
   });
 
-  // Nota: Se você estiver usando App Check, a inicialização do Firebase 
+  // Nota: Se vocÃª estiver usando App Check, a inicializaÃ§Ã£o do Firebase 
   // deve ocorrer aqui ou em um useEffect separado.
   
   const [activeTab, setActiveTab] = useState('home');
@@ -517,6 +523,7 @@ export default function App() {
   const [userCoords, setUserCoords] = useState<{ lat: number, lng: number } | null>(null);
   
   const [modoAtivo, setModoAtivo] = useState<'mundo' | 'brasil'>('brasil');
+  const [safetyPreference, setSafetyPreference] = useState<SafetyPreference>(readStoredSafetyPreference);
   const [posts, setPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<number[]>([]);
   const [animatingLikes, setAnimatingLikes] = useState<number[]>([]);
@@ -571,7 +578,7 @@ export default function App() {
     }
   }, []);
 
-  const stampPassport = async (name: string, icon: string = "📍", color: string = "#b45a35") => {
+  const stampPassport = async (name: string, icon: string = "ðŸ“", color: string = "#b45a35") => {
     const hasStamp = profileData.seals.some(s => s.name === name);
     if (!hasStamp) {
       try {
@@ -585,7 +592,7 @@ export default function App() {
           ...prev,
           seals: [...prev.seals, newSeal]
         }));
-        showToast(`Novo carimbo: ${name}! ⚓`);
+        showToast(`Novo carimbo: ${name}! âš“`);
       } catch (error) {
         console.error("Erro ao salvar selo:", error);
       }
@@ -645,6 +652,19 @@ export default function App() {
   };
 
   const dados = DADOS_MODO[modoAtivo];
+  const safetyMeta = SAFETY_PREFERENCE_META[safetyPreference];
+  const conversationIdRef = useRef(`captain-${Date.now()}`);
+
+  const buildLocalCurationContext = (surface: 'home' | 'chat' | 'itinerary' | 'story') => ({
+    conversationId: conversationIdRef.current,
+    surface,
+    mode: modoAtivo,
+    userCity,
+    lat: userCoords?.lat,
+    lng: userCoords?.lng,
+    safetyProfile: safetyPreference === 'safer' ? 'priorizar_seguranca' : 'equilibrado',
+    curationProfile: safetyMeta.curationProfile,
+  });
 
   const currentLocations = modoAtivo === 'mundo' ? LOCATIONS.mundo : LOCATIONS.brasil;
   const defaultCenter = modoAtivo === 'mundo' ? { lat: 40, lng: 10 } : { lat: -15, lng: -50 };
@@ -655,17 +675,17 @@ export default function App() {
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Estado para o modal de criar memória
+  // Estado para o modal de criar memÃ³ria
   const [showCreateMemory, setShowCreateMemory] = useState(false);
   const [memoryImage, setMemoryImage] = useState<string | null>(null);
   const [memoryText, setMemoryText] = useState('');
-  const [memoryLocation, setMemoryLocation] = useState('Buscando localização...');
+  const [memoryLocation, setMemoryLocation] = useState('Buscando localizaÃ§Ã£o...');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Estado para o Perfil
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileData, setProfileData] = useState({
-    name: 'Viajante Anônimo',
+    name: 'Viajante AnÃ´nimo',
     bio: 'Explorando o mundo, um pixel de cada vez.',
     avatar: 'https://i.pravatar.cc/150?img=12',
     isPremium: false,
@@ -678,6 +698,10 @@ export default function App() {
   });
 
   const isTripActive = profileData.activeTripUntil && new Date(profileData.activeTripUntil) > new Date();
+
+  useEffect(() => {
+    localStorage.setItem(SAFETY_PREFERENCE_STORAGE_KEY, safetyPreference);
+  }, [safetyPreference]);
 
   const [editName, setEditName] = useState(profileData.name);
   const [editBio, setEditBio] = useState(profileData.bio);
@@ -709,7 +733,7 @@ export default function App() {
   
   const [favoriteLists, setFavoriteLists] = useState<FavoriteList[]>([
     { id: 1, name: 'Para Voltar', items: [] },
-    { id: 2, name: 'Praias Imperdíveis', items: [] }
+    { id: 2, name: 'Praias ImperdÃ­veis', items: [] }
   ]);
   const [showSaveToFavorite, setShowSaveToFavorite] = useState(false);
   const [syncedItinerary, setSyncedItinerary] = useState<Itinerary | null>(null);
@@ -726,11 +750,11 @@ export default function App() {
 
   const [suggestedItineraries, setSuggestedItineraries] = useState<Itinerary[]>([
     { 
-      id: 1, name: 'Roteiro de Final de Semana', destination: 'Sua Localização', isCustom: false, theme: 'Descoberta',
+      id: 1, name: 'Roteiro de Final de Semana', destination: 'Sua LocalizaÃ§Ã£o', isCustom: false, theme: 'Descoberta',
       days: [
         { id: 1, dayNumber: 1, stops: [
-          { id: 1, time: '10:00', title: 'Ponto de Interesse Local', description: 'Explore o que há de melhor ao seu redor.' },
-          { id: 2, time: '13:00', title: 'Gastronomia Regional', description: 'Descubra sabores autênticos da região.' }
+          { id: 1, time: '10:00', title: 'Ponto de Interesse Local', description: 'Explore o que hÃ¡ de melhor ao seu redor.' },
+          { id: 2, time: '13:00', title: 'Gastronomia Regional', description: 'Descubra sabores autÃªnticos da regiÃ£o.' }
         ]}
       ]
     }
@@ -789,7 +813,7 @@ export default function App() {
         }));
         const local = LOCAIS.find(l => l.id === localId);
         if (local) {
-          stampPassport(local.cidade, "⭐", "#e8c678");
+          stampPassport(local.cidade, "â­", "#e8c678");
         }
       }
     } catch (error) {
@@ -809,14 +833,14 @@ export default function App() {
         id: l.id,
         title: l.title,
         description: l.description,
-        time: "Horário Livre"
+        time: "HorÃ¡rio Livre"
       }));
 
       if (localMatches.length > 0) {
         setCitySuggestions(localMatches);
         setItineraryStep('suggestions');
       } else {
-        alert(`Ainda não temos dicas da comunidade para ${newItineraryDest}. Que tal usar nossa Inteligência Artificial?`);
+        alert(`Ainda nÃ£o temos dicas da comunidade para ${newItineraryDest}. Que tal usar nossa InteligÃªncia Artificial?`);
         setItinerarySource('ai');
         // Continua para a busca por IA
       }
@@ -825,22 +849,32 @@ export default function App() {
 
     setIsSearchingCity(true);
     try {
-      const response = await callAI<{ items?: AISuggestion[] }>("itinerary_suggestions", {
-        destination: newItineraryDest,
-        mode: modoAtivo
+      const response = await callNearbyPlaces({
+        city: newItineraryDest,
+        mode: modoAtivo,
+        placeQuery: 'pontos turisticos imperdiveis',
+        requestedCount: 5,
+        ...buildLocalCurationContext('itinerary')
       });
-      const suggestions = response.data?.items || [];
-      setCitySuggestions(suggestions);
+      const suggestions = response.items.slice(0, 5).map((item) => ({
+        id: item.placeId,
+        title: item.name,
+        description: item.address || item.description,
+        time: '', // itinerÃ¡rio define horÃ¡rio depois
+        icon: item.icon
+      }));
+      setCitySuggestions(suggestions as any);
       setItineraryStep('suggestions');
     } catch (error) {
       console.error("Erro ao buscar cidade:", error);
-      alert("Não foi possível encontrar sugestões para esta cidade.");
+      alert("NÃ£o foi possÃ­vel encontrar sugestÃµes para esta cidade.");
     } finally {
       setIsSearchingCity(false);
     }
   };
 
   const handleGetIASuggestions = async () => {
+    setIaSuggestions([]);
     setIsIaLoading(true);
     setShowIAAssistant(true);
     try {
@@ -849,8 +883,11 @@ export default function App() {
         lng: userCoords?.lng,
         city: userCity,
         mode: modoAtivo,
-        placeQuery: dados.roteiro.clima?.includes('°') ? 'lugares interessantes' : 'cafes e pontos culturais'
+        placeQuery: dados.roteiro.clima?.includes('Â°') ? 'lugares interessantes e bem avaliados' : 'cafes e pontos culturais',
+        requestedCount: 3,
+        ...buildLocalCurationContext('chat')
       });
+      logCurationSuggestions('Assistente IA - sugestoes rapidas', response.items);
       const suggestions = response.items.slice(0, 3).map((item) => ({
         id: item.placeId,
         title: item.name,
@@ -860,13 +897,14 @@ export default function App() {
       setIaSuggestions(suggestions);
     } catch (error) {
       console.error("Erro no Assistente IA:", error);
-      setIaSuggestions([{ id: 1, title: "Erro na conexão", description: "Não consegui falar com o guia agora. Tente novamente em breve.", icon: "⚠️" }]);
+      setIaSuggestions([{ id: 1, title: "Erro na conexÃ£o", description: "NÃ£o consegui falar com o guia agora. Tente novamente em breve.", icon: "âš ï¸" }]);
     } finally {
       setIsIaLoading(false);
     }
   };
 
   const fetchDashboardSuggestions = async (city: string) => {
+    setDashboardSuggestions([]);
     setIsDashboardIaLoading(true);
     try {
       const response = await callNearbyPlaces({
@@ -874,8 +912,13 @@ export default function App() {
         lng: userCoords?.lng,
         city,
         mode: modoAtivo,
-        placeQuery: 'lugares para visitar'
+        placeQuery: safetyPreference === 'safer'
+          ? 'lugares bem avaliados para descobrir'
+          : 'descobertas editoriais por perto',
+        requestedCount: 10,
+        ...buildLocalCurationContext('home')
       });
+      logCurationSuggestions('Painel - perto de voce', response.items);
       const suggestions = response.items.slice(0, 10).map((item) => ({
         id: item.placeId,
         title: item.name,
@@ -886,7 +929,8 @@ export default function App() {
       }));
       setDashboardSuggestions(suggestions);
     } catch (error) {
-      console.error("Erro ao buscar sugestões do dashboard:", error);
+      console.error("Erro ao buscar sugestÃµes do dashboard:", error);
+      setDashboardSuggestions([]);
     } finally {
       setIsDashboardIaLoading(false);
     }
@@ -941,7 +985,7 @@ export default function App() {
       setActiveTab('map'); // Switch to map to show the route
     } catch (error) {
       console.error("Erro ao calcular rota:", error);
-      alert("Não foi possível traçar a rota para este local.");
+      alert("NÃ£o foi possÃ­vel traÃ§ar a rota para este local.");
     } finally {
       setIsCalculatingRoute(false);
     }
@@ -959,25 +1003,25 @@ export default function App() {
     if (userCity) {
       fetchDashboardSuggestions(userCity);
     }
-  }, [userCity]);
+  }, [userCity, safetyPreference, modoAtivo]);
 
   const handleStartNavigation = () => {
     if (!syncedItinerary) return;
     const firstStop = syncedItinerary.days[0].stops[0];
     
-    // Tenta encontrar coordenadas pelo título nos locais conhecidos
+    // Tenta encontrar coordenadas pelo tÃ­tulo nos locais conhecidos
     const allLocs = [...LOCATIONS.mundo, ...LOCATIONS.brasil];
     const foundLoc = allLocs.find(l => l.name.toLowerCase().includes(firstStop.title.toLowerCase()) || firstStop.title.toLowerCase().includes(l.name.toLowerCase()));
     
     if (foundLoc) {
       calculateRoute({ lat: foundLoc.lat, lng: foundLoc.lng });
     } else {
-      // Se não encontrar, tenta usar a cidade do roteiro como destino genérico
+      // Se nÃ£o encontrar, tenta usar a cidade do roteiro como destino genÃ©rico
       const cityLoc = allLocs.find(l => l.name.toLowerCase() === syncedItinerary.destination.toLowerCase());
       if (cityLoc) {
         calculateRoute({ lat: cityLoc.lat, lng: cityLoc.lng });
       } else {
-        alert("Não consegui localizar as coordenadas exatas deste destino nos meus mapas antigos. Tente selecionar um local diretamente no mapa!");
+        alert("NÃ£o consegui localizar as coordenadas exatas deste destino nos meus mapas antigos. Tente selecionar um local diretamente no mapa!");
       }
     }
   };
@@ -1060,7 +1104,7 @@ export default function App() {
     }
   };
 
-  // Efeito para geolocalização ao iniciar o app
+  // Efeito para geolocalizaÃ§Ã£o ao iniciar o app
   useEffect(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(async (position) => {
@@ -1075,23 +1119,23 @@ export default function App() {
           setUserCity(`${latitude.toFixed(2)}, ${longitude.toFixed(2)}`);
         }
       }, (error) => {
-        console.warn("Erro de geolocalização:", error);
+        console.warn("Erro de geolocalizaÃ§Ã£o:", error);
       });
     }
   }, []);
 
-  // Efeito para geolocalização ao abrir o chat
+  // Efeito para geolocalizaÃ§Ã£o ao abrir o chat
   useEffect(() => {
     if (activeTab === 'ia' && !isGreeting) {
       const getGreeting = async () => {
         setIsGreeting(true);
         
-        // Mensagem temporária de sintonização
+        // Mensagem temporÃ¡ria de sintonizaÃ§Ã£o
         const tuningId = Date.now();
         setMessages(prev => [...prev, { 
           id: tuningId, 
           type: 'bot', 
-          text: '🧭 *Sintonizando rádio e GPS... Buscando sua posição nos mapas antigos.*', 
+          text: 'ðŸ§­ *Sintonizando rÃ¡dio e GPS... Buscando sua posiÃ§Ã£o nos mapas antigos.*', 
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
         }]);
 
@@ -1100,26 +1144,27 @@ export default function App() {
             const { latitude, longitude } = position.coords;
             
             try {
-              const response = await callCaptainChat("Acabei de abrir o guia. Me dê uma saudação inicial curta.", {
+              const response = await callCaptainChat("Acabei de abrir o guia. Me dÃª uma saudaÃ§Ã£o inicial curta.", {
                 lat: latitude,
                 lng: longitude,
                 userCity: userCity || null,
                 activeTab: 'ia',
-                mode: modoAtivo
+                mode: modoAtivo,
+                ...buildLocalCurationContext('chat')
               });
 
-              const botText = response.text || `Ahoy! Vejo que você está em ${userCity || 'coordenadas interessantes'}. Pronto para a aventura?`;
+              const botText = response.text || `Ahoy! Vejo que vocÃª estÃ¡ em ${userCity || 'coordenadas interessantes'}. Pronto para a aventura?`;
               setMessages(prev => prev.map(msg => msg.id === tuningId ? { ...msg, text: botText } : msg));
             } catch (error) {
-              console.error("Erro na saudação IA:", error);
-              setMessages(prev => prev.map(msg => msg.id === tuningId ? { ...msg, text: "Ahoy, explorador! Meu GPS está um pouco instável, mas estou pronto para guiar seus passos. Para onde vamos hoje? 🧭" } : msg));
+              console.error("Erro na saudaÃ§Ã£o IA:", error);
+              setMessages(prev => prev.map(msg => msg.id === tuningId ? { ...msg, text: "Ahoy, explorador! Meu GPS estÃ¡ um pouco instÃ¡vel, mas estou pronto para guiar seus passos. Para onde vamos hoje? ðŸ§­" } : msg));
             }
           }, (error) => {
-            console.warn("Erro de geolocalização:", error);
-            setMessages(prev => prev.map(msg => msg.id === tuningId ? { ...msg, text: "Ahoy! Não consegui captar seu sinal de GPS (talvez você esteja em um túnel ou floresta densa?), mas não importa! Onde quer que você esteja, estou pronto para ser seu guia. 🧭" } : msg));
+            console.warn("Erro de geolocalizaÃ§Ã£o:", error);
+            setMessages(prev => prev.map(msg => msg.id === tuningId ? { ...msg, text: "Ahoy! NÃ£o consegui captar seu sinal de GPS (talvez vocÃª esteja em um tÃºnel ou floresta densa?), mas nÃ£o importa! Onde quer que vocÃª esteja, estou pronto para ser seu guia. ðŸ§­" } : msg));
           });
         } else {
-          setMessages(prev => prev.map(msg => msg.id === tuningId ? { ...msg, text: "Ahoy! Seu equipamento não parece ter suporte a GPS, mas um bom navegador sempre encontra o caminho. Como posso ajudar hoje? 📜" } : msg));
+          setMessages(prev => prev.map(msg => msg.id === tuningId ? { ...msg, text: "Ahoy! Seu equipamento nÃ£o parece ter suporte a GPS, mas um bom navegador sempre encontra o caminho. Como posso ajudar hoje? ðŸ“œ" } : msg));
         }
       };
 
@@ -1128,6 +1173,7 @@ export default function App() {
   }, [activeTab, userCity, modoAtivo]);
 
   const handleNewSession = () => {
+    conversationIdRef.current = `captain-${Date.now()}`;
     setMessages([]);
     setIsGreeting(false);
   };
@@ -1137,9 +1183,9 @@ export default function App() {
     if (!inputValue.trim()) return;
     
     // Check for credits/premium
-    // BYPASS IA TEMPORÁRIA
+    // BYPASS IA TEMPORÃRIA
     // if (!profileData.isPremium && profileData.credits <= 0) {
-    //   showToast("Você precisa de um Bilhete de Viagem para falar com o Capitão! 🎫", "error");
+    //   showToast("VocÃª precisa de um Bilhete de Viagem para falar com o CapitÃ£o! ðŸŽ«", "error");
     //   changeTab('perfil');
     //   return;
     // }
@@ -1155,7 +1201,7 @@ export default function App() {
 
     try {
       // Consume credit if not premium
-      // BYPASS IA TEMPORÁRIA
+      // BYPASS IA TEMPORÃRIA
       // if (!profileData.isPremium) {
       //   setProfileData(prev => ({ ...prev, credits: Math.max(0, prev.credits - 1) }));
       // }
@@ -1167,27 +1213,30 @@ export default function App() {
         activeTab: 'ia',
         selectedPlaceName: selectedLocal?.title || selectedLocal?.nome || null,
         selectedPlaceAddress: selectedLocal?.location || null,
-        mode: modoAtivo
+        mode: modoAtivo,
+        requestedCount: 8,
+        ...buildLocalCurationContext('chat')
       });
+      logCurationSuggestions(`Guia IA - resposta para: ${userText}`, response.data?.items || []);
 
-      const botText = response.text || "Desculpe, meu rádio está com interferência. Pode repetir?";
+      const botText = response.text || "Desculpe, meu rÃ¡dio estÃ¡ com interferÃªncia. Pode repetir?";
       setMessages(prev => prev.map(msg => msg.id === typingId ? { ...msg, text: botText } : msg));
     } catch (error) {
       console.error("Erro na IA:", error);
-      setMessages(prev => prev.map(msg => msg.id === typingId ? { ...msg, text: "O sinal está fraco aqui nas montanhas. Tente novamente!" } : msg));
+      setMessages(prev => prev.map(msg => msg.id === typingId ? { ...msg, text: "O sinal estÃ¡ fraco aqui nas montanhas. Tente novamente!" } : msg));
     }
   };
 
   const handleOpenCreateMemory = () => {
     setShowCreateMemory(true);
-    setMemoryLocation(userCity || 'Buscando localização...');
+    setMemoryLocation(userCity || 'Buscando localizaÃ§Ã£o...');
   };
 
   const handleCloseCreateMemory = () => {
     setShowCreateMemory(false);
     setMemoryImage(null);
     setMemoryText('');
-    setMemoryLocation('Buscando localização...');
+    setMemoryLocation('Buscando localizaÃ§Ã£o...');
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1213,12 +1262,12 @@ export default function App() {
       const newPost = await res.json();
       if (newPost && !newPost.error) {
         setPosts(prev => [newPost, ...prev]);
-        stampPassport(memoryLocation.split(',')[0], "📸", "#64a4ad");
+        stampPassport(memoryLocation.split(',')[0], "ðŸ“¸", "#64a4ad");
         handleCloseCreateMemory();
         changeTab('comunidade');
       } else {
         console.error("Erro ao publicar post:", newPost);
-        showToast("Erro ao publicar memória. Tente novamente.", "error");
+        showToast("Erro ao publicar memÃ³ria. Tente novamente.", "error");
       }
     } catch (error) {
       console.error("Erro ao publicar:", error);
@@ -1242,7 +1291,7 @@ export default function App() {
   };
 
   const handleDeletePost = (postId: number) => {
-    // Em um app real, usaríamos um modal de confirmação customizado.
+    // Em um app real, usarÃ­amos um modal de confirmaÃ§Ã£o customizado.
     // Para manter a fluidez, vamos filtrar diretamente.
     setPosts(prev => prev.filter(p => p.id !== postId));
     setSelectedPostForDetail(null);
@@ -1254,8 +1303,8 @@ export default function App() {
   };
 
   const handleSharePost = (post: any) => {
-    // Simulação de compartilhamento
-    const shareText = `Confira esta memória de ${post.user} em ${post.local}: ${post.texto}`;
+    // SimulaÃ§Ã£o de compartilhamento
+    const shareText = `Confira esta memÃ³ria de ${post.user} em ${post.local}: ${post.texto}`;
     if (navigator.share) {
       navigator.share({
         title: 'Antigravity Memory',
@@ -1263,9 +1312,9 @@ export default function App() {
         url: window.location.href,
       }).catch(() => {});
     } else {
-      // Fallback: copiar para área de transferência
+      // Fallback: copiar para Ã¡rea de transferÃªncia
       navigator.clipboard.writeText(`${shareText} - ${window.location.href}`);
-      showToast("Link copiado para a área de transferência!");
+      showToast("Link copiado para a Ã¡rea de transferÃªncia!");
     }
   };
 
@@ -1290,7 +1339,7 @@ export default function App() {
       const updatedUser = await res.json();
       if (updatedUser && !updatedUser.error) {
         setProfileData(prev => ({ ...prev, ...updatedUser }));
-        showToast(type === 'trip' ? `Viagem de ${days} dias ativada! 🎫` : 'Bem-vindo ao Capitão Pro! ⚓✨');
+        showToast(type === 'trip' ? `Viagem de ${days} dias ativada! ðŸŽ«` : 'Bem-vindo ao CapitÃ£o Pro! âš“âœ¨');
       } else {
         console.error("Erro no upgrade:", updatedUser);
         showToast("Erro ao realizar upgrade.", "error");
@@ -1311,7 +1360,7 @@ export default function App() {
       if (updatedUser && !updatedUser.error) {
         setProfileData(prev => ({ ...prev, ...updatedUser }));
         setIsEditingProfile(false);
-        showToast('Perfil atualizado! ⚓');
+        showToast('Perfil atualizado! âš“');
       } else {
         console.error("Erro ao salvar perfil:", updatedUser);
         showToast("Erro ao salvar perfil.", "error");
@@ -1323,9 +1372,9 @@ export default function App() {
 
   const addSeal = () => {
     const newSeals = [
-      { id: 3, name: 'Amante de Café', icon: '☕', color: '#b45a35' },
-      { id: 4, name: 'Trilheiro', icon: '⛰️', color: '#2c5e40' },
-      { id: 5, name: 'Fotógrafo', icon: '📸', color: '#5a3c28' }
+      { id: 3, name: 'Amante de CafÃ©', icon: 'â˜•', color: '#b45a35' },
+      { id: 4, name: 'Trilheiro', icon: 'â›°ï¸', color: '#2c5e40' },
+      { id: 5, name: 'FotÃ³grafo', icon: 'ðŸ“¸', color: '#5a3c28' }
     ];
     const randomSeal = newSeals[Math.floor(Math.random() * newSeals.length)];
     
@@ -1333,7 +1382,7 @@ export default function App() {
     if (!profileData.seals.find(s => s.name === randomSeal.name)) {
       setProfileData(prev => ({ ...prev, seals: [...prev.seals, randomSeal] }));
     } else {
-      alert("Você já tem este selo!");
+      alert("VocÃª jÃ¡ tem este selo!");
     }
   };
 
@@ -1358,7 +1407,7 @@ export default function App() {
           <div className="flex items-center gap-1 opacity-80 text-[#4a3320]"><MapPin size={12} className="text-[#b45a35]"/><p className="font-retro-body text-xs font-bold">{userCity || dados.roteiro.cidade}</p></div>
         </div>
         <div className="bg-[#e8c678] border-2 border-[#5a3c28] px-2 py-1 rounded-lg shadow-[2px_2px_0px_#5a3c28] transform rotate-2 flex items-center gap-1.5">
-          <Sun size={16} className="text-[#b45a35] fill-[#b45a35]"/><p className="font-retro-pixel text-lg text-[#4a3320] font-bold">{userCity ? '24°C' : '--°C'}</p>
+          <Sun size={16} className="text-[#b45a35] fill-[#b45a35]"/><p className="font-retro-pixel text-lg text-[#4a3320] font-bold">{userCity ? '24Â°C' : '--Â°C'}</p>
         </div>
       </div>
 
@@ -1376,7 +1425,7 @@ export default function App() {
       <div>
          <h3 className="font-retro-body font-bold text-base text-[#4a3320] mb-2.5 flex items-center gap-2"><Navigation size={16} className="text-[#b45a35]" fill="#b45a35"/> {syncedItinerary ? `Roteiro: ${syncedItinerary.name}` : 'No Roteiro Agora'}</h3>
          <div className="retro-box p-3.5 relative overflow-hidden bg-[#f3ecdb] border-2 border-[#b45a35] shadow-[3px_3px_0px_#5a3c28]">
-            <VintageStamp text={syncedItinerary ? "ATIVO" : "PRÓXIMO"} color="#b45a35" rotate="-5deg" />
+            <VintageStamp text={syncedItinerary ? "ATIVO" : "PRÃ“XIMO"} color="#b45a35" rotate="-5deg" />
             <div className="absolute right-[-15px] top-[-15px] opacity-10 text-[#b45a35]"><Camera size={80} /></div>
             <div className="relative z-10 mt-5">
                <div className="flex justify-between items-start mb-1">
@@ -1394,54 +1443,69 @@ export default function App() {
          </div>
       </div>
 
-      <div>
-         <div className="flex justify-between items-end mb-2.5">
-            <h3 className="font-retro-body font-bold text-base text-[#4a3320] flex items-center gap-2">
-              <MessageSquare size={16} className="text-[#64a4ad]" fill="#64a4ad"/> Perto de você
-            </h3>
-            <button 
-              onClick={() => {
-                if (showIaSuggestions) {
-                  setShowingAllIaSuggestions(true);
-                } else {
-                  changeTab('comunidade');
-                }
-              }} 
-              className="text-[#b45a35] font-retro-pixel text-[10px] font-bold uppercase underline"
-            >
-              Ver tudo
-            </button>
-         </div>
+          <div>
+             <div className="flex justify-between items-end gap-3 mb-2.5">
+               <div className="space-y-1">
+                 <h3 className="font-retro-body font-bold text-base text-[#4a3320] flex items-center gap-2">
+                   <MessageSquare size={16} className="text-[#64a4ad]" fill="#64a4ad"/> Perto de vocÃª
+                 </h3>
+                 <p className="font-retro-pixel text-[8px] text-[#5a3c28]/60 uppercase tracking-[0.18em]">
+                   Curadoria editorial com base na sua localizacao e no seu contexto.
+                 </p>
+               </div>
+               <button 
+                 onClick={() => {
+                   if (showIaSuggestions) {
+                     setShowingAllIaSuggestions(true);
+                   } else {
+                     changeTab('comunidade');
+                   }
+                 }} 
+                 className="text-[#b45a35] font-retro-pixel text-[10px] font-bold uppercase underline whitespace-nowrap"
+               >
+                 {showIaSuggestions ? 'Explorar selecao' : 'Ver tudo'}
+               </button>
+            </div>
+            <SafetyPreferenceToggle value={safetyPreference} onChange={setSafetyPreference} className="mb-3" />
          
-         {isDashboardIaLoading ? (
-           <div className="py-4 flex flex-col items-center justify-center space-y-2">
-             <div className="w-6 h-6 border-3 border-[#64a4ad] border-t-transparent rounded-full animate-spin"></div>
-             <p className="font-retro-pixel text-[10px] text-[#5a3c28]">Buscando locais próximos...</p>
-           </div>
-         ) : (
-           <div className="flex overflow-x-auto hide-scrollbar gap-3.5 pb-3">
-             {showIaSuggestions ? (
-               dashboardSuggestions.map((item, idx) => (
-                 <div key={item.id} className="w-[180px] max-w-[180px] polaroid-card relative flex-shrink-0 cursor-pointer p-2 group" style={{ transform: `rotate(${idx % 2 === 0 ? '-2deg' : '2deg'})` }}>
-                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-7 h-2.5 bg-[#e8c678]/80 backdrop-blur-sm transform rotate-1 z-10 opacity-70"></div>
-                    <div className="relative overflow-hidden mb-1.5">
-                      <img src={item.img} alt={item.title} className="w-full h-20 object-cover border-2 border-[#5a3c28] group-hover:scale-105 transition-transform duration-500" />
-                      <div className="absolute top-1 right-1 bg-[#e8c678] border border-[#5a3c28] px-1 rounded flex items-center gap-0.5">
-                        <Star size={8} fill="#b45a35" className="text-[#b45a35]" />
-                        <span className="font-retro-pixel text-[8px] font-bold">{item.rating}</span>
-                      </div>
-                    </div>
-                    <div className="px-0.5">
-                       <p className="font-handwriting text-[#4a3320] text-sm leading-tight line-clamp-1 mb-0.5">{item.title}</p>
-                       <p className="font-retro-pixel text-[8px] text-[#5a3c28]/70 line-clamp-2 leading-none">{item.description}</p>
-                       <div className="flex items-center gap-1 border-t border-[#5a3c28]/20 pt-1 mt-1.5">
-                          <span className="font-retro-pixel text-[8px] text-[#64a4ad] font-bold uppercase">Sugerido por IA</span>
-                          <span className="ml-auto text-xs">{item.icon}</span>
+          {isDashboardIaLoading ? (
+            <div className="py-4 flex flex-col items-center justify-center space-y-2">
+              <div className="w-6 h-6 border-3 border-[#64a4ad] border-t-transparent rounded-full animate-spin"></div>
+              <p className="font-retro-pixel text-[10px] text-[#5a3c28]">Buscando descobertas editoriais...</p>
+            </div>
+          ) : (
+            <div className="flex overflow-x-auto hide-scrollbar gap-3.5 pb-3">
+              {showIaSuggestions ? (
+                dashboardSuggestions.length === 0 ? (
+                  <div className="w-full retro-box p-4 bg-[#f3ecdb] border-2 border-[#5a3c28] shadow-[3px_3px_0px_#5a3c28]">
+                    <p className="font-retro-body text-sm text-[#4a3320] font-bold">Nenhuma descoberta editorial disponÃ­vel agora.</p>
+                    <p className="mt-1 font-retro-pixel text-[9px] text-[#5a3c28]/70 uppercase leading-tight">
+                      Ajuste a curadoria ou tente novamente em instantes.
+                    </p>
+                  </div>
+                ) : (
+                  dashboardSuggestions.map((item, idx) => (
+                    <div key={item.id} className="w-[180px] max-w-[180px] polaroid-card relative flex-shrink-0 cursor-pointer p-2 group" style={{ transform: `rotate(${idx % 2 === 0 ? '-2deg' : '2deg'})` }}>
+                       <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-7 h-2.5 bg-[#e8c678]/80 backdrop-blur-sm transform rotate-1 z-10 opacity-70"></div>
+                       <div className="relative overflow-hidden mb-1.5">
+                         <img src={item.img} alt={item.title} className="w-full h-20 object-cover border-2 border-[#5a3c28] group-hover:scale-105 transition-transform duration-500" />
+                         <div className="absolute top-1 right-1 bg-[#e8c678] border border-[#5a3c28] px-1 rounded flex items-center gap-0.5">
+                           <Star size={8} fill="#b45a35" className="text-[#b45a35]" />
+                           <span className="font-retro-pixel text-[8px] font-bold">{item.rating}</span>
+                         </div>
+                       </div>
+                       <div className="px-0.5">
+                          <p className="font-handwriting text-[#4a3320] text-sm leading-tight line-clamp-1 mb-0.5">{item.title}</p>
+                          <p className="font-retro-pixel text-[8px] text-[#5a3c28]/70 line-clamp-2 leading-none">{item.description}</p>
+                          <div className="flex items-center gap-1 border-t border-[#5a3c28]/20 pt-1 mt-1.5">
+                             <span className="font-retro-pixel text-[8px] text-[#64a4ad] font-bold uppercase">Curadoria Navegantes</span>
+                             <span className="ml-auto text-xs">{item.icon}</span>
+                          </div>
                        </div>
                     </div>
-                 </div>
-               ))
-             ) : (
+                  ))
+                )
+              ) : (
                top3Posts.map((post, idx) => (
                   <div key={post.id} className="w-[180px] max-w-[180px] polaroid-card relative flex-shrink-0 cursor-pointer p-2 group" onClick={() => setSelectedPostForDetail(post)} style={{ transform: `rotate(${idx % 2 === 0 ? '-2deg' : '2deg'})` }}>
                      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-7 h-2.5 bg-[#e8c678]/80 backdrop-blur-sm transform rotate-1 z-10 opacity-70"></div>
@@ -1521,18 +1585,18 @@ export default function App() {
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-[#f3ecdb] z-50">
               <div className="text-red-500 mb-4">
                 <AlertTriangle size={48} className="mx-auto mb-2 opacity-50" />
-                <h3 className="font-retro-title text-lg">Problema de Configuração</h3>
+                <h3 className="font-retro-title text-lg">Problema de ConfiguraÃ§Ã£o</h3>
               </div>
               <p className="font-retro-body text-xs text-[#5a3c28] max-w-xs mb-4">
-                {authError || "Não foi possível conectar aos servidores de cartografia."}
+                {authError || "NÃ£o foi possÃ­vel conectar aos servidores de cartografia."}
               </p>
               <div className="space-y-2 w-full max-w-xs">
                 <div className="p-3 bg-white/80 border-2 border-[#5a3c28] rounded-lg text-[10px] text-left font-retro-body">
-                  <p className="font-bold text-[#b45a35] mb-1">Checklist de Solução:</p>
+                  <p className="font-bold text-[#b45a35] mb-1">Checklist de SoluÃ§Ã£o:</p>
                   <ul className="list-disc ml-4 space-y-1">
                     <li>Ativar "Maps JavaScript API" no Cloud Console</li>
                     <li>Vincular Conta de Faturamento (Billing)</li>
-                    <li>Remover restrições de IP/Referrer da chave para teste</li>
+                    <li>Remover restriÃ§Ãµes de IP/Referrer da chave para teste</li>
                   </ul>
                 </div>
               </div>
@@ -1542,7 +1606,7 @@ export default function App() {
               <div className="w-12 h-12 border-4 border-[#b45a35] border-t-transparent rounded-full animate-spin"></div>
               <p className="font-retro-pixel text-[#5a3c28] animate-pulse">Desenhando pergaminhos...</p>
               {!import.meta.env.VITE_GOOGLE_MAPS_API_KEY && (
-                <p className="text-[10px] text-red-500 font-bold uppercase mt-4 px-8 text-center">Aviso: Chave de API do Google Maps não configurada nos Secrets.</p>
+                <p className="text-[10px] text-red-500 font-bold uppercase mt-4 px-8 text-center">Aviso: Chave de API do Google Maps nÃ£o configurada nos Secrets.</p>
               )}
             </div>
           ) : (
@@ -1554,7 +1618,7 @@ export default function App() {
               onLoad={onLoad}
               onUnmount={onUnmount}
             >
-              {/* Marcador da Posição do Usuário */}
+              {/* Marcador da PosiÃ§Ã£o do UsuÃ¡rio */}
               {userCoords && (
                 <Marker
                   position={userCoords}
@@ -1566,9 +1630,9 @@ export default function App() {
                     strokeColor: "#ffffff",
                     scale: 1.5,
                     anchor: new google.maps.Point(12, 12),
-                    rotation: 0 // Poderia ser dinâmico se tivéssemos o heading
+                    rotation: 0 // Poderia ser dinÃ¢mico se tivÃ©ssemos o heading
                   }}
-                  title="Você está aqui"
+                  title="VocÃª estÃ¡ aqui"
                 />
               )}
 
@@ -1626,7 +1690,7 @@ export default function App() {
                       ) : (
                         <Navigation size={10} />
                       )}
-                      Traçar Rota
+                      TraÃ§ar Rota
                     </button>
                   </div>
                 </InfoWindow>
@@ -1637,7 +1701,7 @@ export default function App() {
           {/* Overlay de Textura de Papel */}
           <div className="absolute inset-0 pointer-events-none opacity-20 mix-blend-multiply" style={{ backgroundImage: 'url(https://www.transparenttextures.com/patterns/paper-fibers.png)' }}></div>
           
-          {/* Botões de Controle do Mapa */}
+          {/* BotÃµes de Controle do Mapa */}
           <div className="absolute top-20 right-4 flex flex-col gap-2 z-10">
             <button 
               onClick={() => setFollowMe(!followMe)}
@@ -1668,9 +1732,9 @@ export default function App() {
               >
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <h4 className="font-retro-title text-lg text-[#4a3320] leading-none">Rota Traçada</h4>
+                    <h4 className="font-retro-title text-lg text-[#4a3320] leading-none">Rota TraÃ§ada</h4>
                     <p className="font-retro-pixel text-[10px] text-[#b45a35] uppercase font-bold mt-1">
-                      {directionsResponse.routes[0].legs[0].distance?.text} • {directionsResponse.routes[0].legs[0].duration?.text}
+                      {directionsResponse.routes[0].legs[0].distance?.text} â€¢ {directionsResponse.routes[0].legs[0].duration?.text}
                     </p>
                   </div>
                   <button 
@@ -1705,7 +1769,7 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          {/* Bússola Decorativa */}
+          {/* BÃºssola Decorativa */}
           <div className="absolute bottom-6 right-6 w-16 h-16 opacity-40 pointer-events-none transform rotate-12">
             <Compass size={64} className="text-[#5a3c28]" />
           </div>
@@ -1776,7 +1840,7 @@ export default function App() {
           <div className="flex justify-between items-start">
             <div>
               <h2 className="font-retro-title text-3xl text-[#4a3320] leading-tight">{selectedLocal.nome}</h2>
-              <p className="font-retro-pixel text-xs text-[#64a4ad] font-bold uppercase tracking-widest">{selectedLocal.categoria} • {selectedLocal.cidade}</p>
+              <p className="font-retro-pixel text-xs text-[#64a4ad] font-bold uppercase tracking-widest">{selectedLocal.categoria} â€¢ {selectedLocal.cidade}</p>
             </div>
             <div className="bg-[#e8c678] border-2 border-[#5a3c28] px-2 py-1 rounded-lg shadow-[2px_2px_0px_#5a3c28] flex items-center gap-1">
               <Star size={16} fill="#b45a35" color="#b45a35" />
@@ -1794,9 +1858,9 @@ export default function App() {
           </div>
 
           <div className="space-y-4">
-            <h3 className="font-retro-body font-bold text-lg text-[#4a3320] border-b-2 border-[#5a3c28]/10 pb-1">Avaliações da Comunidade</h3>
+            <h3 className="font-retro-body font-bold text-lg text-[#4a3320] border-b-2 border-[#5a3c28]/10 pb-1">AvaliaÃ§Ãµes da Comunidade</h3>
             {reviews.length === 0 ? (
-              <p className="font-retro-pixel text-sm text-[#5a3c28]/60 italic text-center py-4">Nenhuma avaliação ainda. Seja o primeiro!</p>
+              <p className="font-retro-pixel text-sm text-[#5a3c28]/60 italic text-center py-4">Nenhuma avaliaÃ§Ã£o ainda. Seja o primeiro!</p>
             ) : (
               reviews.map(review => (
                 <div key={review.id} className="retro-box p-3 space-y-2">
@@ -1819,7 +1883,7 @@ export default function App() {
                       onClick={() => handleHelpful(selectedLocal.id, review.id)}
                       className="flex items-center gap-1 text-[#64a4ad] font-retro-pixel text-[10px] font-bold hover:scale-105"
                     >
-                      <ThumbsUp size={10} /> Útil ({review.helpful})
+                      <ThumbsUp size={10} /> Ãštil ({review.helpful})
                     </button>
                   </div>
                 </div>
@@ -1833,7 +1897,7 @@ export default function App() {
           <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="w-full max-w-[300px] bg-[#f3ecdb] rounded-2xl border-4 border-[#5a3c28] shadow-[6px_6px_0px_#5a3c28] p-4 space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="font-retro-title text-xl">Sua Avaliação</h3>
+                <h3 className="font-retro-title text-xl">Sua AvaliaÃ§Ã£o</h3>
                 <button onClick={() => setShowAddReview(false)}><X size={20} /></button>
               </div>
               <div className="flex justify-center gap-2">
@@ -1846,7 +1910,7 @@ export default function App() {
               <textarea 
                 value={reviewComment}
                 onChange={(e) => setReviewComment(e.target.value)}
-                placeholder="Conte como foi sua experiência..."
+                placeholder="Conte como foi sua experiÃªncia..."
                 className="w-full bg-white border-2 border-[#5a3c28] rounded-lg p-2 font-handwriting text-lg h-24 resize-none"
               />
               <div className="flex items-center gap-2">
@@ -1888,7 +1952,7 @@ export default function App() {
 
   const renderPerfil = () => (
     <div className="p-4 space-y-5 animate-fade-in h-full overflow-y-auto bg-[#f3ecdb]">
-      {/* Cabeçalho do Perfil */}
+      {/* CabeÃ§alho do Perfil */}
       <div className="flex flex-col items-center text-center pt-4">
         <div className="relative group mb-2.5">
           <div className="w-24 h-24 rounded-full border-4 border-[#5a3c28] shadow-[4px_4px_0px_#5a3c28] overflow-hidden bg-white">
@@ -1929,9 +1993,9 @@ export default function App() {
         )}
       </div>
 
-      {/* Botão de Ação do Perfil */}
+      {/* BotÃ£o de AÃ§Ã£o do Perfil */}
       <div className="px-2 space-y-4">
-        {/* Status de Navegação (Monetização) */}
+        {/* Status de NavegaÃ§Ã£o (MonetizaÃ§Ã£o) */}
         <div className="bg-[#5a3c28] text-[#f3ecdb] p-4 rounded-2xl border-2 border-[#5a3c28] shadow-[4px_4px_0px_#b45a35] relative overflow-hidden">
           <div className="absolute top-0 right-0 p-2 opacity-20">
             <Anchor size={64} />
@@ -1939,9 +2003,9 @@ export default function App() {
           <div className="relative z-10">
             <div className="flex justify-between items-start mb-3">
               <div>
-                <h4 className="font-retro-title text-xl leading-none">Status de Navegação</h4>
+                <h4 className="font-retro-title text-xl leading-none">Status de NavegaÃ§Ã£o</h4>
                 <p className="font-retro-pixel text-[10px] uppercase tracking-widest mt-1 opacity-80">
-                  {profileData.isPremium ? '⚓ Capitão Pro (Vitalício)' : isTripActive ? `⛵ Viagem Ativa` : '⛵ Navegante Padrão'}
+                  {profileData.isPremium ? 'âš“ CapitÃ£o Pro (VitalÃ­cio)' : isTripActive ? `â›µ Viagem Ativa` : 'â›µ Navegante PadrÃ£o'}
                 </p>
               </div>
               {isTripActive && !profileData.isPremium && (
@@ -1969,21 +2033,21 @@ export default function App() {
                     onClick={() => handleUpgrade('trip', 7)}
                     className="bg-[#f3ecdb] text-[#4a3320] font-retro-pixel text-[9px] font-bold py-2 rounded border-2 border-[#b45a35] hover:bg-white transition-colors flex flex-col items-center"
                   >
-                    <span>Férias (7d)</span>
+                    <span>FÃ©rias (7d)</span>
                     <span className="text-[#b45a35] mt-1">R$ 19,90</span>
                   </button>
                   <button 
                     onClick={() => handleUpgrade('trip', 30)}
                     className="bg-[#f3ecdb] text-[#4a3320] font-retro-pixel text-[9px] font-bold py-2 rounded border-2 border-[#5a3c28] hover:bg-white transition-colors flex flex-col items-center"
                   >
-                    <span>Mochilão (30d)</span>
+                    <span>MochilÃ£o (30d)</span>
                     <span className="text-[#b45a35] mt-1">R$ 39,90</span>
                   </button>
                   <button 
                     onClick={() => handleUpgrade('lifetime')}
                     className="bg-[#e8c678] text-[#4a3320] font-retro-pixel text-[9px] font-bold py-2 rounded border-2 border-white hover:bg-[#f3ecdb] transition-colors flex flex-col items-center"
                   >
-                    <span>Vitalício</span>
+                    <span>VitalÃ­cio</span>
                     <span className="text-[#b45a35] mt-1">R$ 127,00</span>
                   </button>
                 </div>
@@ -1992,7 +2056,7 @@ export default function App() {
             
             {profileData.isPremium && (
               <p className="font-retro-body text-xs italic opacity-90 mt-2">
-                "Você tem acesso total a todos os mapas e tesouros do mundo!"
+                "VocÃª tem acesso total a todos os mapas e tesouros do mundo!"
               </p>
             )}
           </div>
@@ -2024,7 +2088,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Configurações Rápidas */}
+      {/* ConfiguraÃ§Ãµes RÃ¡pidas */}
       <div className="px-2">
         <div className="bg-white border-2 border-[#5a3c28] rounded-2xl p-3 shadow-[2px_2px_0px_#5a3c28] space-y-3">
           <div className="flex justify-between items-center">
@@ -2056,7 +2120,7 @@ export default function App() {
           </h3>
           <div className="flex items-center gap-1 bg-[#64a4ad]/10 px-2 py-0.5 rounded-full border border-[#64a4ad]/20">
             <Sparkles size={10} className="text-[#64a4ad]" />
-            <span className="font-retro-pixel text-[8px] font-bold text-[#64a4ad] uppercase">Nível {Math.floor(profileData.seals.length / 3) + 1}</span>
+            <span className="font-retro-pixel text-[8px] font-bold text-[#64a4ad] uppercase">NÃ­vel {Math.floor(profileData.seals.length / 3) + 1}</span>
           </div>
         </div>
         
@@ -2091,7 +2155,7 @@ export default function App() {
               ))
             )}
             
-            {/* Espaços vazios para incentivar exploração */}
+            {/* EspaÃ§os vazios para incentivar exploraÃ§Ã£o */}
             {[...Array(Math.max(0, 6 - profileData.seals.length))].map((_, i) => (
               <div key={`empty-${i}`} className="flex flex-col items-center gap-1.5 opacity-20">
                 <div className="w-16 h-16 rounded-full border-2 border-dashed border-[#5a3c28]/40 flex items-center justify-center">
@@ -2105,7 +2169,7 @@ export default function App() {
         
         <div className="mt-3 flex justify-center">
           <p className="font-retro-pixel text-[9px] text-[#5a3c28]/60 italic">
-            "Cada carimbo é uma história contada ao vento."
+            "Cada carimbo Ã© uma histÃ³ria contada ao vento."
           </p>
         </div>
       </div>
@@ -2139,12 +2203,12 @@ export default function App() {
         <div>
           <div className="flex justify-between items-center border-b-2 border-[#5a3c28]/10 pb-1 mb-3">
             <h3 className="font-retro-body font-bold text-lg text-[#4a3320] flex items-center gap-2">
-              <Star size={18} className="text-[#e8c678]" fill="#e8c678" /> Minhas Avaliações
+              <Star size={18} className="text-[#e8c678]" fill="#e8c678" /> Minhas AvaliaÃ§Ãµes
             </h3>
           </div>
           <div className="space-y-3">
             {profileData.reviews.length === 0 ? (
-              <p className="text-center font-retro-pixel text-[11px] text-[#5a3c28]/60 italic py-4">Você ainda não avaliou locais.</p>
+              <p className="text-center font-retro-pixel text-[11px] text-[#5a3c28]/60 italic py-4">VocÃª ainda nÃ£o avaliou locais.</p>
             ) : (
               profileData.reviews.map(rev => (
                 <div key={rev.id} className="bg-white border-2 border-[#5a3c28] p-3 rounded-xl shadow-[2px_2px_0px_#5a3c28]">
@@ -2165,7 +2229,7 @@ export default function App() {
   );
 
   const renderIA = () => {
-    // BYPASS IA TEMPORÁRIA
+    // BYPASS IA TEMPORÃRIA
     const isLocked = false; // !profileData.isPremium && !isTripActive;
 
     return (
@@ -2175,15 +2239,15 @@ export default function App() {
             <div className="w-20 h-20 bg-[#5a3c28] rounded-full flex items-center justify-center shadow-lg mb-4">
               <Lock size={40} className="text-[#e8c678]" />
             </div>
-            <h3 className="font-retro-title text-2xl text-[#4a3320] mb-2">Rádio Silencioso</h3>
+            <h3 className="font-retro-title text-2xl text-[#4a3320] mb-2">RÃ¡dio Silencioso</h3>
             <p className="font-retro-body text-sm text-[#5a3c28] mb-6">
-              O Capitão precisa de um <b>Bilhete de Viagem</b> para sintonizar a frequência e te guiar.
+              O CapitÃ£o precisa de um <b>Bilhete de Viagem</b> para sintonizar a frequÃªncia e te guiar.
             </p>
             <button 
               onClick={() => changeTab('perfil')}
               className="bg-[#b45a35] text-[#f3ecdb] font-retro-body font-bold py-3 px-8 rounded-xl border-2 border-[#5a3c28] shadow-[4px_4px_0px_#5a3c28] active:translate-y-0.5 active:shadow-none transition-all"
             >
-              Obter Bilhetes 🎫
+              Obter Bilhetes ðŸŽ«
             </button>
           </div>
         )}
@@ -2200,10 +2264,10 @@ export default function App() {
          <button 
            onClick={handleNewSession}
            className="flex items-center gap-1 px-2 py-1 bg-[#e8c678]/40 hover:bg-[#e8c678]/60 text-[#5a3c28] rounded-md border border-[#5a3c28]/30 transition-colors"
-           title="Iniciar nova sessão"
+           title="Iniciar nova sessÃ£o"
          >
            <RefreshCw size={12} className={!isGreeting ? "animate-spin" : ""} />
-           <span className="font-retro-pixel text-[8px] font-bold uppercase">Nova Sessão</span>
+           <span className="font-retro-pixel text-[8px] font-bold uppercase">Nova SessÃ£o</span>
          </button>
       </div>
       <div className="flex-grow notebook-bg overflow-y-auto p-4 pt-5 space-y-5">
@@ -2229,16 +2293,16 @@ export default function App() {
 
   const renderComunidade = () => (
     <div className="p-4 space-y-6 animate-fade-in h-full overflow-y-auto bg-[#e8c678]/20">
-      {/* Marketplace de Experiências */}
+      {/* Marketplace de ExperiÃªncias */}
       <div className="space-y-3">
         <h3 className="font-retro-title text-lg text-[#4a3320] flex items-center gap-2">
           <ShoppingBag size={18} className="text-[#b45a35]" /> Mercado de Aventuras
         </h3>
         <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
           {[
-            { id: 1, name: "Tour Histórico", partner: "GetYourGuide", price: "R$ 85", icon: "🏛️" },
-            { id: 2, name: "Trilha Secreta", partner: "Viator", price: "R$ 120", icon: "🥾" },
-            { id: 3, name: "Jantar à Luz de Velas", partner: "Booking", price: "R$ 250", icon: "🕯️" }
+            { id: 1, name: "Tour HistÃ³rico", partner: "GetYourGuide", price: "R$ 85", icon: "ðŸ›ï¸" },
+            { id: 2, name: "Trilha Secreta", partner: "Viator", price: "R$ 120", icon: "ðŸ¥¾" },
+            { id: 3, name: "Jantar Ã  Luz de Velas", partner: "Booking", price: "R$ 250", icon: "ðŸ•¯ï¸" }
           ].map(exp => (
             <div key={exp.id} className="flex-shrink-0 w-40 bg-white border-2 border-[#5a3c28] p-3 rounded-xl shadow-[3px_3px_0px_#5a3c28] flex flex-col gap-1">
               <div className="text-2xl mb-1">{exp.icon}</div>
@@ -2247,7 +2311,7 @@ export default function App() {
               <div className="mt-2 flex items-center justify-between">
                 <span className="font-retro-pixel text-[10px] font-bold text-[#b45a35]">{exp.price}</span>
                 <button 
-                  onClick={() => showToast(`Redirecionando para ${exp.partner}... ✈️`, "success")}
+                  onClick={() => showToast(`Redirecionando para ${exp.partner}... âœˆï¸`, "success")}
                   className="bg-[#b45a35] text-white p-1 rounded border border-[#5a3c28]"
                 >
                   <ArrowRight size={12} />
@@ -2259,7 +2323,7 @@ export default function App() {
       </div>
 
       <div className="flex justify-between items-center mb-2">
-         <h2 className="font-retro-title text-2xl text-[#4a3320] leading-none">Diários Abertos</h2>
+         <h2 className="font-retro-title text-2xl text-[#4a3320] leading-none">DiÃ¡rios Abertos</h2>
          <button 
            onClick={handleOpenCreateMemory} 
            className="bg-[#b45a35] text-[#f3ecdb] px-4 py-2 rounded-xl border-2 border-[#5a3c28] shadow-[3px_3px_0px_#5a3c28] hover:bg-[#8a3c1f] active:translate-y-0.5 active:shadow-none transition-all flex items-center gap-2"
@@ -2381,7 +2445,7 @@ export default function App() {
                 <button 
                   className="text-[#5a3c28]/40 hover:text-red-600 transition-colors"
                   title="Denunciar"
-                  onClick={() => showToast("Denúncia enviada para análise.")}
+                  onClick={() => showToast("DenÃºncia enviada para anÃ¡lise.")}
                 >
                   <AlertTriangle size={16} strokeWidth={2.5} />
                 </button>
@@ -2424,7 +2488,7 @@ export default function App() {
                       onClick={handleSaveEdit}
                       className="flex-grow bg-[#2c5e40] text-white font-retro-pixel text-[10px] py-1.5 rounded border-2 border-[#5a3c28] shadow-[2px_2px_0px_#000] font-bold"
                     >
-                      Salvar Alterações
+                      Salvar AlteraÃ§Ãµes
                     </button>
                     <button 
                       onClick={() => setIsEditingPost(false)}
@@ -2470,7 +2534,7 @@ export default function App() {
             </div>
 
             <div className="space-y-3">
-              <h4 className="font-retro-pixel text-[10px] font-bold uppercase text-[#b45a35] border-b border-[#b45a35]/20 pb-1">Comentários ({selectedPostForDetail.comments})</h4>
+              <h4 className="font-retro-pixel text-[10px] font-bold uppercase text-[#b45a35] border-b border-[#b45a35]/20 pb-1">ComentÃ¡rios ({selectedPostForDetail.comments})</h4>
               {comments.length === 0 ? (
                 <p className="font-retro-body text-[11px] text-[#5a3c28]/60 italic text-center py-4">Seja o primeiro a comentar!</p>
               ) : (
@@ -2495,7 +2559,7 @@ export default function App() {
                 type="text" 
                 value={newCommentText}
                 onChange={(e) => setNewCommentText(e.target.value)}
-                placeholder="Escreva um comentário..." 
+                placeholder="Escreva um comentÃ¡rio..." 
                 className="flex-grow bg-white border-2 border-[#5a3c28] rounded-xl px-3 py-2 text-xs font-retro-body shadow-[2px_2px_0px_#5a3c28] focus:outline-none"
                 onKeyPress={(e) => {
                   if (e.key === 'Enter') {
@@ -2556,7 +2620,7 @@ export default function App() {
             {selectedPostForDetail && renderPostDetail()}
           </AnimatePresence>
 
-          {/* Modal de Todas as Sugestões IA */}
+          {/* Modal de Todas as SugestÃµes IA */}
           <AnimatePresence>
             {showingAllIaSuggestions && (
               <motion.div 
@@ -2574,7 +2638,7 @@ export default function App() {
                   onClick={e => e.stopPropagation()}
                 >
                   <div className="p-4 border-b-4 border-[#5a3c28] bg-[#64a4ad]/20 flex justify-between items-center">
-                    <h3 className="font-retro-title text-xl text-[#4a3320]">Todas as Sugestões</h3>
+                    <h3 className="font-retro-title text-xl text-[#4a3320]">Todas as SugestÃµes</h3>
                     <button onClick={() => setShowingAllIaSuggestions(false)} className="text-[#5a3c28] hover:scale-110 transition-transform">
                       <X size={24} />
                     </button>
@@ -2598,7 +2662,7 @@ export default function App() {
                     ))}
                   </div>
                   <div className="p-4 border-t-4 border-[#5a3c28] bg-[#f3ecdb] text-center">
-                    <p className="font-retro-pixel text-[8px] text-[#5a3c28]/60 uppercase font-bold italic">Sugestões geradas por inteligência artificial baseadas na sua localização</p>
+                    <p className="font-retro-pixel text-[8px] text-[#5a3c28]/60 uppercase font-bold italic">Descobertas editoriais baseadas na sua localizaÃ§Ã£o e na sua curadoria</p>
                   </div>
                 </motion.div>
               </motion.div>
@@ -2606,7 +2670,7 @@ export default function App() {
           </AnimatePresence>
         </main>
 
-        {/* Modal de Criar Memória */}
+        {/* Modal de Criar MemÃ³ria */}
         {showCreateMemory && (
           <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
             <div className="w-full max-w-[320px] bg-[#f3ecdb] rounded-2xl border-4 border-[#5a3c28] shadow-[6px_6px_0px_#5a3c28] overflow-hidden flex flex-col max-h-[90%]">
@@ -2635,13 +2699,13 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Área de Texto */}
+                {/* Ãrea de Texto */}
                 <div>
-                  <label className="block font-retro-body font-bold text-[#4a3320] mb-1 text-sm">Diário de Bordo</label>
+                  <label className="block font-retro-body font-bold text-[#4a3320] mb-1 text-sm">DiÃ¡rio de Bordo</label>
                   <textarea 
                     value={memoryText}
                     onChange={(e) => setMemoryText(e.target.value)}
-                    placeholder="Que dia incrível! Hoje eu..."
+                    placeholder="Que dia incrÃ­vel! Hoje eu..."
                     className="w-full bg-white border-2 border-[#5a3c28] rounded-xl p-2.5 font-handwriting text-lg text-[#4a3320] shadow-[2px_2px_0px_#5a3c28] resize-none h-20 focus:outline-none focus:ring-1 focus:ring-[#b45a35]"
                   />
                 </div>
@@ -2671,9 +2735,9 @@ export default function App() {
               <div className="p-4 overflow-y-auto space-y-5">
                 <button 
                   onClick={() => {
-                    // BYPASS IA TEMPORÁRIA
+                    // BYPASS IA TEMPORÃRIA
                     // if (!profileData.isPremium && !isTripActive && profileData.credits <= 0) {
-                    //   showToast("Você precisa de um Bilhete de Viagem para criar novos roteiros! 🎫", "error");
+                    //   showToast("VocÃª precisa de um Bilhete de Viagem para criar novos roteiros! ðŸŽ«", "error");
                     //   setShowItineraries(false);
                     //   changeTab('perfil');
                     //   return;
@@ -2686,12 +2750,12 @@ export default function App() {
                 </button>
                 
                 <div className="space-y-3">
-                  <h4 className="font-retro-body font-bold text-sm text-[#4a3320] border-b border-[#5a3c28]/10 pb-1">Sugeridos para Você</h4>
+                  <h4 className="font-retro-body font-bold text-sm text-[#4a3320] border-b border-[#5a3c28]/10 pb-1">Sugeridos para VocÃª</h4>
                   {suggestedItineraries.map(itin => (
                     <div key={itin.id} className="retro-box p-3 bg-white flex justify-between items-center">
                       <div className="flex-grow">
                         <p className="font-retro-body font-bold text-sm">{itin.name}</p>
-                        <p className="font-retro-pixel text-[9px] text-[#64a4ad] uppercase font-bold">{itin.destination} • {itin.theme}</p>
+                        <p className="font-retro-pixel text-[9px] text-[#64a4ad] uppercase font-bold">{itin.destination} â€¢ {itin.theme}</p>
                         <div className="mt-1 flex gap-1">
                           {itin.days.map(d => (
                             <div key={d.id} className="bg-[#f3ecdb] px-1 rounded text-[8px] font-retro-pixel border border-[#5a3c28]/20">Dia {d.dayNumber}</div>
@@ -2716,7 +2780,7 @@ export default function App() {
                           <button 
                             onClick={() => {
                               const stopTitle = prompt('Nome da parada:');
-                              const stopTime = prompt('Horário (ex: 10:00):');
+                              const stopTime = prompt('HorÃ¡rio (ex: 10:00):');
                               if (stopTitle && stopTime) {
                                 setProfileData(prev => ({
                                   ...prev,
@@ -2772,7 +2836,7 @@ export default function App() {
                         type="text" 
                         value={newItineraryName}
                         onChange={(e) => setNewItineraryName(e.target.value)}
-                        placeholder="Ex: Férias de Verão" 
+                        placeholder="Ex: FÃ©rias de VerÃ£o" 
                         className="w-full bg-white border-2 border-[#5a3c28] rounded-lg p-2 font-retro-body text-sm"
                       />
                     </div>
@@ -2792,7 +2856,7 @@ export default function App() {
                     disabled={!newItineraryName || !newItineraryDest}
                     className="w-full bg-[#64a4ad] text-white border-2 border-[#5a3c28] py-2.5 rounded-lg font-retro-body font-bold text-sm shadow-[2px_2px_0px_#5a3c28] flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    Próximo <ArrowRight size={16} />
+                    PrÃ³ximo <ArrowRight size={16} />
                   </button>
                 </div>
               )}
@@ -2812,9 +2876,9 @@ export default function App() {
                         <div className="p-2 bg-[#64a4ad]/20 rounded-lg text-[#64a4ad]">
                           <Sparkles size={20} />
                         </div>
-                        <h4 className="font-retro-body font-bold text-sm">Inteligência Artificial</h4>
+                        <h4 className="font-retro-body font-bold text-sm">InteligÃªncia Artificial</h4>
                       </div>
-                      <p className="font-retro-pixel text-[8px] text-[#5a3c28]/70">Sugestões personalizadas em qualquer lugar do mundo.</p>
+                       <p className="font-retro-pixel text-[8px] text-[#5a3c28]/70">SugestÃµes personalizadas com curadoria e contexto.</p>
                     </button>
 
                     <button 
@@ -2846,7 +2910,7 @@ export default function App() {
                 <div className="space-y-4 flex-grow flex flex-col overflow-hidden">
                   <div className="bg-white/50 p-2 rounded-lg border border-[#5a3c28]/20">
                     <p className="font-retro-pixel text-[10px] text-[#b45a35] font-bold uppercase">
-                      {itinerarySource === 'ai' ? '✨ IA' : '👥 Comunidade'}: {newItineraryDest}
+                      {itinerarySource === 'ai' ? 'âœ¨ IA' : 'ðŸ‘¥ Comunidade'}: {newItineraryDest}
                     </p>
                     <p className="font-retro-body text-xs text-[#5a3c28] font-bold">Selecione pontos para seu roteiro:</p>
                   </div>
@@ -2928,7 +2992,7 @@ export default function App() {
             <span className={`text-[9px] font-bold mt-1 font-retro-body uppercase tracking-wide ${activeTab === 'perfil' ? 'text-[#5a3c28]' : 'text-[#f3ecdb]'}`}>Perfil</span>
           </button>
         </nav>
-        {/* Modal de Guia de Instalação */}
+        {/* Modal de Guia de InstalaÃ§Ã£o */}
         <AnimatePresence>
           {showInstallGuide && (
             <motion.div 
@@ -2946,7 +3010,7 @@ export default function App() {
                 onClick={e => e.stopPropagation()}
               >
                 <div className="bg-[#b45a35] p-4 border-b-4 border-[#5a3c28] flex justify-between items-center">
-                  <h2 className="font-retro-title text-xl text-[#f3ecdb]">Guia de Instalação</h2>
+                  <h2 className="font-retro-title text-xl text-[#f3ecdb]">Guia de InstalaÃ§Ã£o</h2>
                   <button onClick={() => setShowInstallGuide(false)} className="text-[#f3ecdb] hover:scale-110 transition-transform">
                     <X size={20} />
                   </button>
@@ -2958,7 +3022,7 @@ export default function App() {
                       <div className="w-8 h-8 rounded-full bg-[#e8c678] border-2 border-[#5a3c28] flex items-center justify-center font-retro-title text-[#4a3320] shrink-0 text-sm">1</div>
                       <div>
                         <h4 className="font-retro-body font-bold text-xs text-[#4a3320]">No iPhone (Safari)</h4>
-                        <p className="font-retro-body text-[11px] text-[#5a3c28] mt-0.5">Toque no ícone de <span className="font-bold">Compartilhar</span> e selecione <span className="font-bold">"Adicionar à Tela de Início"</span>.</p>
+                        <p className="font-retro-body text-[11px] text-[#5a3c28] mt-0.5">Toque no Ã­cone de <span className="font-bold">Compartilhar</span> e selecione <span className="font-bold">"Adicionar Ã  Tela de InÃ­cio"</span>.</p>
                       </div>
                     </div>
                     
@@ -2966,7 +3030,7 @@ export default function App() {
                       <div className="w-8 h-8 rounded-full bg-[#e8c678] border-2 border-[#5a3c28] flex items-center justify-center font-retro-title text-[#4a3320] shrink-0 text-sm">2</div>
                       <div>
                         <h4 className="font-retro-body font-bold text-xs text-[#4a3320]">No Android (Chrome)</h4>
-                        <p className="font-retro-body text-[11px] text-[#5a3c28] mt-0.5">Toque nos <span className="font-bold">três pontinhos</span> e selecione <span className="font-bold">"Instalar aplicativo"</span>.</p>
+                        <p className="font-retro-body text-[11px] text-[#5a3c28] mt-0.5">Toque nos <span className="font-bold">trÃªs pontinhos</span> e selecione <span className="font-bold">"Instalar aplicativo"</span>.</p>
                       </div>
                     </div>
 
@@ -2974,14 +3038,14 @@ export default function App() {
                       <div className="w-8 h-8 rounded-full bg-[#e8c678] border-2 border-[#5a3c28] flex items-center justify-center font-retro-title text-[#4a3320] shrink-0 text-sm">3</div>
                       <div>
                         <h4 className="font-retro-body font-bold text-xs text-[#4a3320]">No Computador</h4>
-                        <p className="font-retro-body text-[11px] text-[#5a3c28] mt-0.5">Clique no ícone de <span className="font-bold">instalação</span> no lado direito da barra de endereços.</p>
+                        <p className="font-retro-body text-[11px] text-[#5a3c28] mt-0.5">Clique no Ã­cone de <span className="font-bold">instalaÃ§Ã£o</span> no lado direito da barra de endereÃ§os.</p>
                       </div>
                     </div>
                   </div>
 
                   <div className="bg-[#e8c678]/30 p-3 rounded-xl border-2 border-dashed border-[#5a3c28]/40">
                     <p className="font-handwriting text-base text-[#5a3c28] text-center italic">
-                      "Tenha o seu diário de bordo sempre à mão!"
+                      "Tenha o seu diÃ¡rio de bordo sempre Ã  mÃ£o!"
                     </p>
                   </div>
 
@@ -2989,7 +3053,7 @@ export default function App() {
                     onClick={() => setShowInstallGuide(false)}
                     className="w-full bg-[#64a4ad] text-[#f3ecdb] font-retro-body font-bold py-2.5 rounded-lg border-2 border-[#5a3c28] shadow-[3px_3px_0px_#5a3c28] hover:bg-[#4f8a92] active:translate-y-0.5 active:shadow-[1px_1px_0px_#5a3c28] transition-all text-sm"
                   >
-                    Entendi, Capitão!
+                    Entendi, CapitÃ£o!
                   </button>
                 </div>
               </motion.div>
@@ -3014,7 +3078,7 @@ export default function App() {
                   <MapPin size={20} className="text-[#5a3c28]" />
                 </div>
                 <div>
-                  <p className="font-retro-pixel text-[10px] text-[#b45a35] font-bold uppercase">Localização Atual</p>
+                  <p className="font-retro-pixel text-[10px] text-[#b45a35] font-bold uppercase">LocalizaÃ§Ã£o Atual</p>
                   <p className="font-retro-body text-xs font-bold text-[#5a3c28]">{dados.roteiro.cidade}</p>
                 </div>
               </div>
@@ -3081,7 +3145,7 @@ export default function App() {
                     >
                       <h1 className="font-retro-title text-4xl text-[#b45a35] leading-tight">Bem-vindo, Navegante!</h1>
                       <p className="font-handwriting text-2xl text-[#4a3320]">
-                        "Sou o seu Capitão. Este não é um mapa comum, é o seu novo Diário de Bordo."
+                        "Sou o seu CapitÃ£o. Este nÃ£o Ã© um mapa comum, Ã© o seu novo DiÃ¡rio de Bordo."
                       </p>
                     </motion.div>
                   )}
@@ -3102,7 +3166,7 @@ export default function App() {
                           <MapPinned size={32} className="text-[#b45a35]" />
                         </div>
                       </div>
-                      <h2 className="font-retro-body font-bold text-xl text-[#4a3320]">Explore com Inteligência</h2>
+                      <h2 className="font-retro-body font-bold text-xl text-[#4a3320]">Explore com InteligÃªncia</h2>
                       <p className="font-retro-body text-sm text-[#5a3c28]">
                         Use nossa IA para descobrir tesouros escondidos e planejar roteiros que combinam com sua alma aventureira.
                       </p>
@@ -3119,12 +3183,12 @@ export default function App() {
                     >
                       <div className="flex justify-center">
                         <div className="w-20 h-20 rounded-full border-4 border-dashed border-[#b45a35] flex items-center justify-center text-4xl bg-white shadow-lg">
-                          ⚓
+                          âš“
                         </div>
                       </div>
                       <h2 className="font-retro-body font-bold text-xl text-[#4a3320]">Carimbe seu Passaporte</h2>
                       <p className="font-retro-body text-sm text-[#5a3c28]">
-                        Cada lugar visitado, cada memória compartilhada, um novo selo para sua coleção. Pronto para içar velas?
+                        Cada lugar visitado, cada memÃ³ria compartilhada, um novo selo para sua coleÃ§Ã£o. Pronto para iÃ§ar velas?
                       </p>
                     </motion.div>
                   )}
@@ -3141,7 +3205,7 @@ export default function App() {
                     }}
                     className="w-full bg-[#b45a35] text-[#f3ecdb] font-retro-body font-bold py-4 rounded-xl border-2 border-[#5a3c28] shadow-[4px_4px_0px_#000] hover:bg-[#8a3c1f] transition-all active:translate-y-1 active:shadow-none text-lg"
                   >
-                    {onboardingStep === 2 ? "Içar Velas!" : "Próximo Passo"}
+                    {onboardingStep === 2 ? "IÃ§ar Velas!" : "PrÃ³ximo Passo"}
                   </button>
                   
                   {onboardingStep < 2 && (
@@ -3149,7 +3213,7 @@ export default function App() {
                       onClick={finishOnboarding}
                       className="font-retro-pixel text-[10px] text-[#5a3c28]/60 uppercase font-bold hover:underline"
                     >
-                      Pular Introdução
+                      Pular IntroduÃ§Ã£o
                     </button>
                   )}
                 </div>
@@ -3169,3 +3233,4 @@ export default function App() {
     </div>
   );
 }
+
