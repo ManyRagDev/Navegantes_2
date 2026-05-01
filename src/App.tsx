@@ -1086,12 +1086,45 @@ export default function App() {
     }, 200);
   };
 
-  // Efeito para suavizar o movimento do mapa
-  useEffect(() => {
-    if (map && center) {
-      map.panTo(center);
-    }
-  }, [map, center]);
+  // Mapeamento de coordenadas para locais favoritos (lat/lng)
+  const FAVORITE_COORDINATES: Record<number, { lat: number; lng: number; description: string }> = {
+    // Mundo
+    1: { lat: 48.8526, lng: 2.3470, description: 'Livraria histórica em Paris.' }, // Shakespeare & Co
+    2: { lat: 48.8554, lng: 2.3450, description: 'Capela gótica famosa pelos vitrais.' }, // Sainte-Chapelle
+    3: { lat: 41.8902, lng: 12.4922, description: 'O maior anfiteatro já construído.' }, // Coliseu
+    // Brasil
+    4: { lat: -22.9519, lng: -43.2105, description: 'Estátua icônica no topo do Corcovado.' }, // Cristo Redentor
+    5: { lat: -23.2197, lng: -44.7193, description: 'Arquitetura colonial preservada.' }, // Centro Histórico Paraty
+    6: { lat: -12.9714, lng: -38.5014, description: 'Centro histórico vibrante de Salvador.' }, // Pelourinho
+  };
+
+  // Função para obter locais favoritos do usuário com suas coordenadas
+  const getFavoriteLocations = () => {
+    if (!profileData.favorites || profileData.favorites.length === 0) return [];
+    return LOCAIS.filter(loc => profileData.favorites.includes(loc.id));
+  };
+
+  // Função para criar props de marcador para favoritos
+  const getFavoriteMarkers = () => {
+    if (!profileData.favorites || profileData.favorites.length === 0) return [];
+    return profileData.favorites
+      .filter(favId => FAVORITE_COORDINATES[favId])
+      .map(favId => {
+        const local = LOCAIS.find(l => l.id === favId);
+        const coords = FAVORITE_COORDINATES[favId];
+        return {
+          id: favId,
+          name: local?.title || local?.nome || 'Local Favorito',
+          lat: coords.lat,
+          lng: coords.lng,
+          description: coords.description,
+          img: local?.img,
+          city: local?.cidade,
+        };
+      });
+  };
+
+  const favoriteMarkers = getFavoriteMarkers();
 
   const handlePinClick = (cidade: string) => {
     setCidadeSelecionada(cidade);
@@ -1661,6 +1694,23 @@ export default function App() {
                     fillOpacity: 1,
                     strokeWeight: 2,
                     strokeColor: "#5a3c28",
+                    scale: 1.5,
+                  }}
+                />
+              ))}
+
+              {/* Marcadores dos Favoritos do UsuÃ¡rio */}
+              {favoriteMarkers.length > 0 && favoriteMarkers.map((fav) => (
+                <Marker
+                  key={`fav-${fav.id}`}
+                  position={{ lat: fav.lat, lng: fav.lng }}
+                  onClick={() => setSelectedMarker(fav)}
+                  icon={{
+                    path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+                    fillColor: "#e8c678",
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    strokeColor: "#b45a35",
                     scale: 1.5,
                   }}
                 />

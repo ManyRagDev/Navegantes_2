@@ -95,8 +95,8 @@ const MOCK_USER_ID = 1;
 const MOCK_USER = {
   id: MOCK_USER_ID,
   email: "navegante@exemplo.com",
-  name: "Capitao Navegante",
-  bio: "Explorando os sete mares e as ruas de paralelepipedo.",
+  name: "Capitão Navegante",
+  bio: "Explorando os sete mares e as ruas de paralelepípedo.",
   avatar: "https://i.pravatar.cc/150?u=navegante",
   credits: 1,
 };
@@ -108,7 +108,7 @@ const getSupabaseAdmin = (): any => {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nao configuradas no servidor");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configuradas no servidor");
   }
 
   supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {

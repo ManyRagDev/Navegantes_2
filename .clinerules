@@ -1,0 +1,17 @@
+# Cline AI Guidelines para Navegantes
+
+Bem-vindo ao projeto Navegantes! Para garantir a consistência técnica, arquitetural e a integridade do produto, todo o contexto do projeto agora está centralizado na pasta `.conductor`.
+
+**Instruções Obrigatórias para a IA (Cline, Cursor, etc.):**
+
+1. **LEITURA INICIAL (OBRIGATÓRIO):** Sempre que iniciar uma nova sessão ou for realizar uma tarefa neste projeto, você **DEVE** ler os seguintes arquivos dentro de `.conductor/` ANTES de sugerir qualquer alteração ou escrever código:
+   - `.conductor/product.md` (Para contexto de visão de negócio e produto)
+   - `.conductor/rules.md` (Para diretrizes arquiteturais, clean code e regras rígidas de segurança)
+   - `.conductor/tech-stack.md` (Para entender a stack tecnológica atual aprovada)
+   - `.conductor/backlog.md` (Para entender o momento e a fase atual de maturidade do projeto)
+
+2. **FONTE DA VERDADE:** Os arquivos dentro de `.conductor/` representam a única fonte da verdade do projeto. Arquivos antigos de documentação foram movidos para `.trash/` e devem ser ignorados a menos que explicitamente solicitado. Manuais técnicos específicos encontram-se em `.conductor/references/`.
+
+3. **ATUALIZAÇÃO DE DOCUMENTAÇÃO:** Se uma tarefa alterar a stack, criar novas entidades de banco de dados ou impactar as regras do projeto, você **DEVE** sugerir ou realizar as atualizações necessárias nos arquivos em `.conductor/`.
+
+Por favor, proceda com o desenvolvimento respeitando as diretrizes acima!
